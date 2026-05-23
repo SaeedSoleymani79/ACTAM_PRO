@@ -24,17 +24,17 @@
 ### **Instrument Selection Menu**
 The entry point of the application where users can toggle between different synthesis models.
 
-![Menu Interface](ACTAM_PRJ_main/assets/menue.png)
+![Menu Interface](ACTAM_PRJ-main/assets/menue.png)
 
 ### **Main Performance Dashboard**
 The primary workspace featuring the melodic keybed, transport controls, and the Master FX rack.
 
-![Main UI](ACTAM_PRJ_main/assets/keyboard.png)
+![Main UI](ACTAM_PRJ-main/assets/keyboard.png)
 
 ### **Virtual Percussion Layout**
 A specialized UI designed for trigger-based rhythmic performance using a spatial drum kit map.
 
-![Drums UI](ACTAM_PRJ_main/assets/drums.png)
+![Drums UI](ACTAM_PRJ-main/assets/drums.png)
 
 ---
 
