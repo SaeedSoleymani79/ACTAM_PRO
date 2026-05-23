@@ -89,11 +89,42 @@
               
               <div id="guitar-ui" style="display: none; margin-bottom: 20px;">
                 <div class="fretboard-wrap">
-                  <div class="fretboard" id="fretboard">
-                    </div>
+                  <div class="fretboard" id="fretboard"></div>
                 </div>
               </div>
 
+              <div id="chord-pad-ui" class="chord-pad-section">
+                <div class="panel-header" style="border:none; padding:0; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                  
+                  <div style="display:flex; align-items:center; gap:12px;">
+                    <span>Smart Chords</span>
+                    <div class="global-key-controls">
+                      <select id="globalKeyRoot" title="Select Musical Key"></select>
+                      <select id="globalKeyScale" title="Select Scale Type">
+                        <option value="Major">Major</option>
+                        <option value="Minor">Natural Minor</option>
+                        <option value="HarmonicMinor">Harmonic Minor</option>
+                        <option value="PhrygianDom">Phrygian Dominant</option>
+                        <option value="Dorian">Dorian Mode</option>
+                        <option value="Mixolydian">Mixolydian Mode</option>
+                        <option value="MajPentatonic">Major Pentatonic</option>
+                        <option value="MinPentatonic">Minor Pentatonic</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <label class="chord-switch" title="Play chords using your computer keyboard">
+                    <span class="switch-label">Keyboard Chords</span>
+                    <div class="switch-control">
+                      <input type="checkbox" id="chordModeToggle">
+                      <span class="slider"></span>
+                    </div>
+                  </label>
+                  
+                </div>
+                <div class="chord-pads-container" id="chordPadsContainer">
+                  </div>
+              </div>
               <div class="controls-row">
                 <div class="left-panel">
                   <div class="left-panel-row">

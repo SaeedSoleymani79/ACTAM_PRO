@@ -26,6 +26,11 @@ class ACTAMServer:
                         self.engine.note_on(msg['id'], msg['freq'], msg.get('vst'))
                     elif kind == 'note_off':
                         self.engine.note_off(msg['id'])
+                    # --- NEW CHORD ENDPOINTS ---
+                    elif kind == 'chord_on':
+                        self.engine.chord_on(msg['notes'], msg.get('vst'))
+                    elif kind == 'chord_off':
+                        self.engine.chord_off(msg['notes'])
                     elif kind == 'switch':
                         self.engine.set_vst(msg.get('vst', 'piano'))
                     elif kind == 'param':

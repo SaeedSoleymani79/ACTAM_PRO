@@ -75,9 +75,7 @@ class AudioEngine:
 
     def note_on(self, midi_id: int, freq: float, vst: str = None):
         with self.notes_lock:
-            # Use the requested instrument, or fallback to the currently selected one
             target_vst = vst if vst and vst in self.instruments else self.current_vst
-            
             midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
             inst = self.instruments[target_vst]
             
@@ -86,9 +84,8 @@ class AudioEngine:
                 'pos': 0.0,
                 'on': True,
                 'rel_pos': 0.0,
-                'vst': target_vst  # Remember which instrument this note belongs to
+                'vst': target_vst 
             }
-            
             if getattr(self, 'is_recording', False):
                 self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, 64))
 
@@ -96,12 +93,41 @@ class AudioEngine:
         with self.notes_lock:
             if midi_id in self.active_notes:
                 self.active_notes[midi_id]['on'] = False
-                
                 if getattr(self, 'is_recording', False):
-                    # Use the remembered instrument to calculate the exact MIDI note for the recording file
                     target_vst = self.active_notes[midi_id]['vst']
                     midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(self.active_notes[midi_id]['data'].shape[0], 8.0) / 440.0) + 69)
                     self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_id, 0))
+    def chord_on(self, notes: list, vst: str = None):
+        with self.notes_lock:
+            target_vst = vst if vst and vst in self.instruments else self.current_vst
+            inst = self.instruments[target_vst]
+            
+            for note in notes:
+                midi_id = note['id']
+                freq = note['freq']
+                midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
+                
+                self.active_notes[midi_id] = {
+                    'data': inst.get_note_data(midi_note),
+                    'pos': 0.0,
+                    'on': True,
+                    'rel_pos': 0.0,
+                    'vst': target_vst
+                }
+                if getattr(self, 'is_recording', False):
+                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, 64))
+
+    def chord_off(self, note_ids: list):
+        with self.notes_lock:
+            for midi_id in note_ids:
+                if midi_id in self.active_notes:
+                    self.active_notes[midi_id]['on'] = False
+                    
+                    if getattr(self, 'is_recording', False):
+                        target_vst = self.active_notes[midi_id]['vst']
+                        midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(self.active_notes[midi_id]['data'].shape[0], 8.0) / 440.0) + 69)
+                        self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_id, 0))
+    
     def update_param(self, name: str, value: float):
         with self.param_lock:
             if name in self.params:
