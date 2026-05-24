@@ -23,7 +23,7 @@ class ACTAMServer:
                     
                     if kind == 'note_on':
                         # Add msg.get('vst') to pass the instrument name
-                        self.engine.note_on(msg['id'], msg['freq'], msg.get('vst'))
+                        self.engine.note_on(msg['id'], msg['freq'], msg.get('vst'), float(msg.get('velocity', 1.0)))
                     elif kind == 'note_off':
                         self.engine.note_off(msg['id'])
                     # --- NEW CHORD ENDPOINTS ---

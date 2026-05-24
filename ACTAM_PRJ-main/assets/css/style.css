@@ -121,6 +121,205 @@ body.locked .synth-frame { pointer-events: none; opacity: .15; filter: blur(2px)
 .bk .kb-hint { font-size: 9px; font-weight: 700; color: #aaa; }
 
 #drum-ui { flex: 1; }
+.drumkit-header { margin-top: 4px; }
+.drum-machine-panel {
+  background: linear-gradient(180deg, #07070d 0%, #050508 100%);
+  border: 1px solid #1d1d2a;
+  border-radius: 6px;
+  padding: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.dm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.dm-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.dm-title-main {
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.dm-step-count {
+  color: #555;
+  font-size: 9px;
+  font-family: monospace;
+  letter-spacing: 1px;
+}
+.dm-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dm-action,
+.dm-select {
+  height: 28px;
+  background: #11111a;
+  border: 1px solid #2a2a3a;
+  color: #888;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  outline: none;
+}
+.dm-action {
+  min-width: 70px;
+  padding: 0 8px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s, box-shadow .15s;
+}
+.dm-action:hover {
+  color: #ddd;
+  border-color: #55556a;
+}
+.dm-action.active {
+  color: #33ff99;
+  border-color: #33ff99;
+  background: #102518;
+  box-shadow: 0 0 10px rgba(51,255,153,.28);
+}
+.dm-action.active-loop {
+  color: #55ccff;
+  border-color: #55ccff;
+  background: #0c1d28;
+  box-shadow: 0 0 10px rgba(85,204,255,.28);
+}
+.dm-select {
+  width: 132px;
+  padding: 0 8px;
+  color: #55ccff;
+}
+.drum-machine-wrap {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.drum-machine {
+  --dm-steps: 16;
+  display: grid;
+  grid-template-columns: 96px repeat(var(--dm-steps), 16px);
+  gap: 4px 6px;
+  min-width: max-content;
+  align-items: center;
+}
+.dm-corner,
+.dm-step-label,
+.dm-lane-label {
+  min-height: 18px;
+}
+.dm-corner {
+  border-bottom: 1px solid #252535;
+}
+.dm-step-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #505060;
+  font-size: 9px;
+  font-family: monospace;
+  border-bottom: 1px solid #252535;
+}
+.dm-step-label.beat-start {
+  color: #aaa;
+}
+.dm-lane-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  color: #8a8a98;
+  padding: 0 4px 0 0;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.dm-lane-label small {
+  color: #4f4f5e;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.dm-lane-label:hover {
+  color: #fff;
+}
+.dm-cell {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  background: #20202d;
+  border: 1px solid #333345;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background .08s, border-color .08s, box-shadow .08s, transform .08s;
+}
+.dm-cell::after {
+  display: none;
+}
+.dm-cell:hover {
+  background: #2b2b3a;
+  border-color: #55556a;
+}
+.dm-cell.beat-start {
+  box-shadow: none;
+}
+.dm-beat-divider::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: #3a3a4a;
+  box-shadow: 0 0 5px rgba(255,255,255,.08);
+}
+.dm-step-label.dm-beat-divider::before {
+  top: 2px;
+  bottom: -4px;
+  background: #555566;
+}
+.dm-cell.on {
+  border-color: #33ff99;
+  background: #33ff99;
+  box-shadow: 0 0 12px rgba(51,255,153,.45);
+}
+.dm-cell.accent {
+  border-color: #ff4455;
+  background: #ff4455;
+  box-shadow: 0 0 14px rgba(255,68,85,.55);
+  transform: scale(1.08);
+}
+.dm-cell.playing {
+  outline: 1px solid #ffaa00;
+  outline-offset: 2px;
+}
+.dm-cell.triggered {
+  transform: translateY(-1px);
+  box-shadow: 0 0 14px rgba(255,170,0,.45);
+}
+.dm-cell.captured {
+  outline: 1px solid #fff;
+  outline-offset: 2px;
+}
 .drum-stage { position: relative; width: 100%; height: 400px; display: flex; justify-content: center; background: radial-gradient(circle at 50% 80%, #151520 0%, #050508 100%); border-radius: 6px; overflow: hidden; border: 1px solid #1a1a24;}
 
 .drum-pad { position: absolute; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.05s, box-shadow 0.05s; user-select: none; box-sizing: border-box; }
@@ -135,6 +334,7 @@ body.locked .synth-frame { pointer-events: none; opacity: .15; filter: blur(2px)
 .pad-mtom { width: 100px; height: 100px; top: 120px; left: calc(50% + 10px); background: radial-gradient(circle, #332211 0%, #0a0500 80%); border: 4px solid #aaa; box-shadow: 0 5px 10px rgba(0,0,0,0.8); }
 .pad-htom { width: 90px; height: 90px; top: 100px; left: calc(50% - 100px); background: radial-gradient(circle, #332211 0%, #0a0500 80%); border: 4px solid #aaa; box-shadow: 0 5px 10px rgba(0,0,0,0.8); }
 .pad-hihat { width: 100px; height: 100px; bottom: 150px; left: calc(50% - 290px); background: radial-gradient(circle, #d4af37 0%, #8a7322 80%); border: 2px solid #554411; box-shadow: inset 0 0 15px rgba(0,0,0,0.6), 0 5px 10px rgba(0,0,0,0.5); z-index: 4; }
+.pad-openhat { width: 86px; height: 86px; bottom: 250px; left: calc(50% - 305px); background: radial-gradient(circle, #e4c756 0%, #9b8428 80%); border: 2px solid #665314; box-shadow: inset 0 0 15px rgba(0,0,0,0.55), 0 5px 10px rgba(0,0,0,0.5); z-index: 4; }
 .pad-crash { width: 140px; height: 140px; top: 30px; left: calc(50% - 230px); background: radial-gradient(circle, #d4af37 0%, #8a7322 80%); border: 2px solid #554411; box-shadow: inset 0 0 20px rgba(0,0,0,0.6), 0 10px 15px rgba(0,0,0,0.5); }
 .pad-ride { width: 160px; height: 160px; top: 40px; right: calc(50% - 280px); background: radial-gradient(circle, #d4af37 0%, #8a7322 80%); border: 2px solid #554411; box-shadow: inset 0 0 25px rgba(0,0,0,0.6), 0 10px 15px rgba(0,0,0,0.5); }
 

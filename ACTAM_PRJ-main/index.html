@@ -145,11 +145,37 @@
           </div>
 
           <div id="drum-ui" class="daw-panel" style="display: none;">
-            <div class="panel-header">Virtual Drumset</div>
+            <div class="panel-header">Drum Machine</div>
+            <div class="drum-machine-panel">
+              <div class="dm-toolbar">
+                <div class="dm-title">
+                  <span class="dm-title-main">Pattern Editor</span>
+                  <span class="dm-step-count" id="dmStepCount">16 STEPS</span>
+                </div>
+                <div class="dm-actions">
+                  <button class="dm-action active" id="btnDrumMachine" onclick="toggleDrumMachine()">DM ON</button>
+                  <button class="dm-action active-loop" id="btnDrumLoop" onclick="toggleDrumLoop()">LOOP ON</button>
+                  <select id="drumPreset" class="dm-select" onchange="loadDrumPreset()">
+                    <option value="empty">EMPTY</option>
+                    <option value="basic">BASIC</option>
+                    <option value="four">FOUR ON FLOOR</option>
+                    <option value="break">BREAK</option>
+                    <option value="fill">FILL</option>
+                  </select>
+                  <button class="dm-action" onclick="clearDrumPattern()">CLEAR</button>
+                </div>
+              </div>
+              <div class="drum-machine-wrap">
+                <div class="drum-machine" id="drumMachine" aria-label="Drum machine pattern editor"></div>
+              </div>
+            </div>
+
+            <div class="panel-header drumkit-header">Virtual Drumset</div>
             <div class="drum-stage">
               <div class="drum-pad pad-crash" data-note="49" data-key="r"><span class="pad-label">CRASH</span><span class="pad-key">R</span></div>
               <div class="drum-pad pad-ride" data-note="51" data-key="y"><span class="pad-label">RIDE</span><span class="pad-key">Y</span></div>
               <div class="drum-pad pad-hihat" data-note="42" data-key="x"><span class="pad-label">HI-HAT</span><span class="pad-key">X</span></div>
+              <div class="drum-pad pad-openhat" data-note="46" data-key="c"><span class="pad-label">OPEN HAT</span><span class="pad-key">C</span></div>
               <div class="drum-pad pad-htom" data-note="48" data-key="f"><span class="pad-label">HI TOM</span><span class="pad-key">F</span></div>
               <div class="drum-pad pad-mtom" data-note="45" data-key="g"><span class="pad-label">MID TOM</span><span class="pad-key">G</span></div>
               <div class="drum-pad pad-snare" data-note="38" data-key="s"><span class="pad-label">SNARE</span><span class="pad-key">S</span></div>

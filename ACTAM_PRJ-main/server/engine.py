@@ -73,30 +73,32 @@ class AudioEngine:
             with self.notes_lock:
                 self.active_notes.clear()
 
-    def note_on(self, midi_id: int, freq: float, vst: str = None):
+    def note_on(self, midi_id: int, freq: float, vst: str = None, velocity: float = 1.0):
         with self.notes_lock:
             target_vst = vst if vst and vst in self.instruments else self.current_vst
             midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
             inst = self.instruments[target_vst]
+            gain = float(np.clip(velocity, 0.0, 1.0))
             
             self.active_notes[midi_id] = {
                 'data': inst.get_note_data(midi_note),
                 'pos': 0.0,
                 'on': True,
                 'rel_pos': 0.0,
-                'vst': target_vst 
+                'vst': target_vst,
+                'midi_note': midi_note,
+                'gain': gain
             }
             if getattr(self, 'is_recording', False):
-                self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, 64))
+                self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, int(127 * gain)))
 
     def note_off(self, midi_id: int):
         with self.notes_lock:
             if midi_id in self.active_notes:
                 self.active_notes[midi_id]['on'] = False
                 if getattr(self, 'is_recording', False):
-                    target_vst = self.active_notes[midi_id]['vst']
-                    midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(self.active_notes[midi_id]['data'].shape[0], 8.0) / 440.0) + 69)
-                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_id, 0))
+                    midi_note = self.active_notes[midi_id].get('midi_note', midi_id)
+                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_note, 0))
     def chord_on(self, notes: list, vst: str = None):
         with self.notes_lock:
             target_vst = vst if vst and vst in self.instruments else self.current_vst
@@ -112,7 +114,9 @@ class AudioEngine:
                     'pos': 0.0,
                     'on': True,
                     'rel_pos': 0.0,
-                    'vst': target_vst
+                    'vst': target_vst,
+                    'midi_note': midi_note,
+                    'gain': 1.0
                 }
                 if getattr(self, 'is_recording', False):
                     self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, 64))
@@ -124,9 +128,8 @@ class AudioEngine:
                     self.active_notes[midi_id]['on'] = False
                     
                     if getattr(self, 'is_recording', False):
-                        target_vst = self.active_notes[midi_id]['vst']
-                        midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(self.active_notes[midi_id]['data'].shape[0], 8.0) / 440.0) + 69)
-                        self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_id, 0))
+                        midi_note = self.active_notes[midi_id].get('midi_note', midi_id)
+                        self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_note, 0))
     
     def update_param(self, name: str, value: float):
         with self.param_lock:
@@ -161,7 +164,7 @@ class AudioEngine:
                     note['rel_pos'] = float(rel_t[-1])
                     if note['rel_pos'] > 0.40: dead.append(nid)
 
-                mixed += chunk
+                mixed += chunk * float(note.get('gain', 1.0))
                 note['pos'] = float(frac_idx[-1] + speed)
                 if int(note['pos']) >= dlen - 2: dead.append(nid)
                 

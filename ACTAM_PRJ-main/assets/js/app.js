@@ -24,13 +24,30 @@ class AudioClient {
 
 // --- SEQUENCER CLASS ---
 class Sequencer {
-    constructor() {
+    constructor(client) {
+        this.client = client;
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         this.seqInterval = null;
         this.currentStep = 0;
+        this.playingStep = 0;
+        this.lastStepTime = 0;
         this.isPlaying = false;
         this.isRecording = false;
-        this.clickEnabled = true; 
+        this.clickEnabled = true;
+        this.drumMachineEnabled = true;
+        this.drumLoopEnabled = true;
+        this.drumLanes = [
+            { id: 'crash', label: 'CRASH', note: 49, key: 'R' },
+            { id: 'ride', label: 'RIDE', note: 51, key: 'Y' },
+            { id: 'openhat', label: 'OPEN HAT', note: 46, key: 'C' },
+            { id: 'hihat', label: 'CLOSED HAT', note: 42, key: 'X' },
+            { id: 'hitom', label: 'HI TOM', note: 48, key: 'F' },
+            { id: 'midtom', label: 'MID TOM', note: 45, key: 'G' },
+            { id: 'floortom', label: 'FLOOR TOM', note: 41, key: 'V' },
+            { id: 'snare', label: 'SNARE', note: 38, key: 'S' },
+            { id: 'kick', label: 'KICK', note: 36, key: 'SPACE' }
+        ];
+        this.drumPattern = {};
         
         this.initDOM();
     }
@@ -39,6 +56,11 @@ class Sequencer {
         this.bpmInput = document.getElementById('bpmInput');
         this.timeSignature = document.getElementById('timeSignature');
         this.visualizer = document.getElementById('seqVisualizer');
+        this.drumMachine = document.getElementById('drumMachine');
+        this.btnDrumMachine = document.getElementById('btnDrumMachine');
+        this.btnDrumLoop = document.getElementById('btnDrumLoop');
+        this.drumPreset = document.getElementById('drumPreset');
+        this.dmStepCount = document.getElementById('dmStepCount');
         this.btnPlay = document.getElementById('btnPlay');
         this.btnRec = document.getElementById('btnRec');
         this.btnClick = document.getElementById('btnClick');
@@ -57,9 +79,49 @@ class Sequencer {
         gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.1);
         osc.start(); osc.stop(this.audioCtx.currentTime + 0.1);
     }
-    
+
+    getTimeParts() {
+        const [beats, unit] = this.timeSignature.value.split('/').map(Number);
+        return { beats: beats || 4, unit: unit || 4 };
+    }
+
+    getStepsPerBeatUnit() {
+        const { unit } = this.getTimeParts();
+        return Math.max(1, Math.round(16 / unit));
+    }
+
+    getTotalSteps() {
+        const { beats } = this.getTimeParts();
+        return beats * this.getStepsPerBeatUnit();
+    }
+
+    getStepMs() {
+        const bpm = parseInt(this.bpmInput.value) || 120;
+        return ((60 / bpm) * 1000) / 4;
+    }
+
+    ensureDrumPatternLength() {
+        const totalSteps = this.getTotalSteps();
+        this.drumLanes.forEach(lane => {
+            if (!this.drumPattern[lane.id]) {
+                this.drumPattern[lane.id] = Array(totalSteps).fill(0);
+                return;
+            }
+
+            const current = this.drumPattern[lane.id];
+            if (current.length < totalSteps) {
+                this.drumPattern[lane.id] = current.concat(Array(totalSteps - current.length).fill(0));
+            } else if (current.length > totalSteps) {
+                this.drumPattern[lane.id] = current.slice(0, totalSteps);
+            }
+        });
+    }
+
     updateVisualizer() {
-        const beats = parseInt(this.timeSignature.value.split('/')[0]);
+        const { beats } = this.getTimeParts();
+        this.ensureDrumPatternLength();
+        this.currentStep = this.currentStep % this.getTotalSteps();
+
         this.visualizer.innerHTML = '';
         for (let i = 0; i < beats; i++) {
             const dot = document.createElement('div');
@@ -67,6 +129,60 @@ class Sequencer {
             dot.id = 'beat-' + i;
             this.visualizer.appendChild(dot);
         }
+
+        if (this.dmStepCount) this.dmStepCount.textContent = `${this.getTotalSteps()} STEPS`;
+        this.renderDrumMachine();
+    }
+
+    renderDrumMachine() {
+        if (!this.drumMachine) return;
+
+        const totalSteps = this.getTotalSteps();
+        const stepsPerBeatUnit = this.getStepsPerBeatUnit();
+        this.drumMachine.innerHTML = '';
+        this.drumMachine.style.setProperty('--dm-steps', totalSteps);
+
+        const corner = document.createElement('div');
+        corner.className = 'dm-corner';
+        this.drumMachine.appendChild(corner);
+
+        for (let step = 0; step < totalSteps; step++) {
+            const header = document.createElement('div');
+            header.className = 'dm-step-label';
+            if (step % stepsPerBeatUnit === 0) header.classList.add('beat-start', 'dm-beat-divider');
+            header.textContent = step % stepsPerBeatUnit === 0 ? Math.floor(step / stepsPerBeatUnit) + 1 : '';
+            this.drumMachine.appendChild(header);
+        }
+
+        this.drumLanes.forEach(lane => {
+            const label = document.createElement('button');
+            label.type = 'button';
+            label.className = 'dm-lane-label';
+            label.innerHTML = `<span>${lane.label}</span><small>${lane.key}</small>`;
+            label.addEventListener('click', () => this.triggerDrum(lane.note, 1));
+            this.drumMachine.appendChild(label);
+
+            for (let step = 0; step < totalSteps; step++) {
+                const cell = document.createElement('button');
+                cell.type = 'button';
+                cell.className = 'dm-cell';
+                cell.dataset.lane = lane.id;
+                cell.dataset.step = step;
+
+                const state = this.drumPattern[lane.id][step] || 0;
+                if (state === 1) cell.classList.add('on');
+                if (state === 2) cell.classList.add('accent');
+                if (step % stepsPerBeatUnit === 0) cell.classList.add('beat-start', 'dm-beat-divider');
+                if (this.isPlaying && step === this.currentStep) cell.classList.add('playing');
+
+                cell.addEventListener('click', () => {
+                    this.drumPattern[lane.id][step] = (this.drumPattern[lane.id][step] + 1) % 3;
+                    this.renderDrumMachine();
+                });
+
+                this.drumMachine.appendChild(cell);
+            }
+        });
     }
     
     toggleClick() {
@@ -76,18 +192,37 @@ class Sequencer {
         }
     }
 
+    toggleDrumMachine() {
+        this.drumMachineEnabled = !this.drumMachineEnabled;
+        if (this.btnDrumMachine) {
+            this.btnDrumMachine.classList.toggle('active', this.drumMachineEnabled);
+            this.btnDrumMachine.textContent = this.drumMachineEnabled ? 'DM ON' : 'DM OFF';
+        }
+    }
+
+    toggleDrumLoop() {
+        this.drumLoopEnabled = !this.drumLoopEnabled;
+        if (this.btnDrumLoop) {
+            this.btnDrumLoop.classList.toggle('active-loop', this.drumLoopEnabled);
+            this.btnDrumLoop.textContent = this.drumLoopEnabled ? 'LOOP ON' : 'LOOP OFF';
+        }
+    }
+
     togglePlay() {
         this.isPlaying = !this.isPlaying;
         if (this.isPlaying) {
             this.btnPlay.classList.add('active-play');
             this.btnPlay.textContent = '⏹';
             this.currentStep = 0;
-            this.scheduleNextBeat();
+            this.playingStep = 0;
+            this.lastStepTime = performance.now();
+            this.scheduleNextStep();
         } else {
             this.btnPlay.classList.remove('active-play');
             this.btnPlay.textContent = '▶';
             clearTimeout(this.seqInterval);
             document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active', 'active-accent'));
+            document.querySelectorAll('.dm-cell').forEach(cell => cell.classList.remove('playing', 'triggered'));
         }
     }
     
@@ -96,20 +231,134 @@ class Sequencer {
         this.btnRec.classList.toggle('active-rec', this.isRecording);
     }
     
-    scheduleNextBeat() {
+    scheduleNextStep() {
         if (!this.isPlaying) return;
-        const bpm = parseInt(this.bpmInput.value) || 120;
-        const beats = parseInt(this.timeSignature.value.split('/')[0]);
-        const msPerBeat = (60 / bpm) * 1000;
+        const totalSteps = this.getTotalSteps();
+        const stepsPerBeatUnit = this.getStepsPerBeatUnit();
+        const activeBeat = Math.floor(this.currentStep / stepsPerBeatUnit);
+        const isBeatStep = this.currentStep % stepsPerBeatUnit === 0;
+        this.playingStep = this.currentStep;
+        this.lastStepTime = performance.now();
 
-        document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active', 'active-accent'));
-        const activeDot = document.getElementById('beat-' + this.currentStep);
-        if (activeDot) activeDot.classList.add(this.currentStep === 0 ? 'active-accent' : 'active');
+        if (isBeatStep) {
+            document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active', 'active-accent'));
+            const activeDot = document.getElementById('beat-' + activeBeat);
+            if (activeDot) activeDot.classList.add(this.currentStep === 0 ? 'active-accent' : 'active');
+        }
 
-        if (this.clickEnabled) this.playClick(this.currentStep === 0);
+        if (this.clickEnabled && isBeatStep) this.playClick(this.currentStep === 0);
+        if (this.drumMachineEnabled) this.playDrumStep(this.currentStep);
+        this.updateDrumPlayhead();
         
-        this.currentStep = (this.currentStep + 1) % beats;
-        this.seqInterval = setTimeout(() => this.scheduleNextBeat(), msPerBeat);
+        const nextStep = this.currentStep + 1;
+        if (nextStep >= totalSteps && !this.drumLoopEnabled) {
+            this.seqInterval = setTimeout(() => this.togglePlay(), this.getStepMs());
+            return;
+        }
+
+        this.currentStep = nextStep % totalSteps;
+        this.seqInterval = setTimeout(() => this.scheduleNextStep(), this.getStepMs());
+    }
+
+    updateDrumPlayhead() {
+        document.querySelectorAll('.dm-cell').forEach(cell => {
+            cell.classList.toggle('playing', this.isPlaying && parseInt(cell.dataset.step) === this.currentStep);
+        });
+    }
+
+    playDrumStep(step) {
+        this.drumLanes.forEach(lane => {
+            const state = this.drumPattern[lane.id] ? this.drumPattern[lane.id][step] : 0;
+            if (!state) return;
+
+            const velocity = state === 2 ? 1 : 0.68;
+            this.triggerDrum(lane.note, velocity);
+
+            const cell = this.drumMachine ? this.drumMachine.querySelector(`.dm-cell[data-lane="${lane.id}"][data-step="${step}"]`) : null;
+            if (cell) {
+                cell.classList.add('triggered');
+                setTimeout(() => cell.classList.remove('triggered'), 95);
+            }
+        });
+    }
+
+    triggerDrum(midiNote, velocity = 1) {
+        if (!this.client) return;
+        this.client.send({ type: 'note_on', id: midiNote, freq: 0, vst: 'drums', velocity });
+        const pad = document.querySelector(`.drum-pad[data-note="${midiNote}"]`);
+        if (pad) {
+            pad.classList.add('active');
+            setTimeout(() => pad.classList.remove('active'), 80);
+        }
+    }
+
+    getRecordStep() {
+        if (!this.isPlaying) return 0;
+        const elapsed = performance.now() - this.lastStepTime;
+        return elapsed > this.getStepMs() / 2 ? this.currentStep : this.playingStep;
+    }
+
+    recordDrumHit(midiNote) {
+        if (!this.isRecording || !this.isPlaying) return;
+        const lane = this.drumLanes.find(item => item.note === midiNote);
+        if (!lane) return;
+
+        const step = this.getRecordStep();
+        const current = this.drumPattern[lane.id][step] || 0;
+        this.drumPattern[lane.id][step] = current === 0 ? 1 : 2;
+        this.renderDrumMachine();
+
+        const cell = this.drumMachine ? this.drumMachine.querySelector(`.dm-cell[data-lane="${lane.id}"][data-step="${step}"]`) : null;
+        if (cell) {
+            cell.classList.add('captured');
+            setTimeout(() => cell.classList.remove('captured'), 160);
+        }
+    }
+
+    clearDrumPattern() {
+        this.drumLanes.forEach(lane => {
+            this.drumPattern[lane.id] = Array(this.getTotalSteps()).fill(0);
+        });
+        if (this.drumPreset) this.drumPreset.value = 'empty';
+        this.renderDrumMachine();
+    }
+
+    loadDrumPreset(name) {
+        this.clearDrumPattern();
+        const totalSteps = this.getTotalSteps();
+        const set = (laneId, steps, accentSteps = []) => {
+            if (!this.drumPattern[laneId]) return;
+            steps.forEach(step => {
+                const idx = step % totalSteps;
+                this.drumPattern[laneId][idx] = accentSteps.includes(step) ? 2 : 1;
+            });
+        };
+
+        if (name === 'basic') {
+            set('kick', [0, 8], [0]);
+            set('snare', [4, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]);
+        } else if (name === 'four') {
+            set('kick', [0, 4, 8, 12], [0]);
+            set('snare', [4, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 12, 14]);
+            set('openhat', [6, 14]);
+        } else if (name === 'break') {
+            set('kick', [0, 3, 10], [0]);
+            set('snare', [4, 7, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 11, 12, 14]);
+            set('crash', [0], [0]);
+        } else if (name === 'fill') {
+            set('kick', [0, 8], [0]);
+            set('snare', [4, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10]);
+            set('hitom', [11]);
+            set('midtom', [12, 13]);
+            set('floortom', [14, 15], [15]);
+        }
+
+        if (this.drumPreset) this.drumPreset.value = name;
+        this.renderDrumMachine();
     }
 }
 
@@ -117,7 +366,7 @@ class Sequencer {
 class AppController {
     constructor() {
         this.client = new AudioClient('ws://localhost:8765');
-        this.sequencer = new Sequencer();
+        this.sequencer = new Sequencer(this.client);
         this.isPlayable = false;
         this.activeVst = 'piano';
         
@@ -140,6 +389,13 @@ class AppController {
         window.goMenu = this.goMenu.bind(this);
         window.togglePlay = () => this.sequencer.togglePlay();
         window.updateSequencer = () => this.sequencer.updateVisualizer();
+        window.toggleDrumMachine = () => this.sequencer.toggleDrumMachine();
+        window.toggleDrumLoop = () => this.sequencer.toggleDrumLoop();
+        window.clearDrumPattern = () => this.sequencer.clearDrumPattern();
+        window.loadDrumPreset = () => {
+            const preset = document.getElementById('drumPreset');
+            this.sequencer.loadDrumPreset(preset ? preset.value : 'empty');
+        };
         window.toggleFX = this.toggleFX.bind(this);
         window.changeOctave = this.changeOctave.bind(this);
         window.toggleClick = () => this.sequencer.toggleClick();
@@ -874,6 +1130,7 @@ class AppController {
     hitDrum(midiNote, padElement) {
         if(!this.isPlayable) return;
         this.client.send({ type: 'note_on', id: midiNote, freq: 0, vst: 'drums' });
+        this.sequencer.recordDrumHit(midiNote);
         if (padElement) {
             padElement.classList.add('active');
             setTimeout(() => padElement.classList.remove('active'), 80);
