@@ -36,6 +36,16 @@ class Sequencer {
         this.clickEnabled = true;
         this.drumMachineEnabled = true;
         this.drumLoopEnabled = true;
+        this.drumPresetStoragePrefix = 'actamDrumPreset:';
+        this.legacyCustomDrumPresetKey = 'actamCustomDrumPreset';
+        this.activeDrumPreset = 'empty';
+        this.hasUnsavedDrumChanges = false;
+        this.activePatternSlot = 'A';
+        this.patternSlots = { A: null, B: null };
+        this.swingAmount = 0;
+        this.humanizeEnabled = false;
+        this.fillStepsRemaining = 0;
+        this.fillStartStep = 0;
         this.drumLanes = [
             { id: 'crash', label: 'CRASH', note: 49, key: 'R' },
             { id: 'ride', label: 'RIDE', note: 51, key: 'Y' },
@@ -60,11 +70,22 @@ class Sequencer {
         this.btnDrumMachine = document.getElementById('btnDrumMachine');
         this.btnDrumLoop = document.getElementById('btnDrumLoop');
         this.drumPreset = document.getElementById('drumPreset');
+        this.btnSaveCustomPreset = document.getElementById('btnSaveCustomPreset');
+        this.btnResetDrumPreset = document.getElementById('btnResetDrumPreset');
+        this.dmSwing = document.getElementById('dmSwing');
+        this.dmSwingValue = document.getElementById('dmSwingValue');
+        this.btnPatternA = document.getElementById('btnPatternA');
+        this.btnPatternB = document.getElementById('btnPatternB');
+        this.btnDrumFill = document.getElementById('btnDrumFill');
+        this.btnDrumHumanize = document.getElementById('btnDrumHumanize');
         this.dmStepCount = document.getElementById('dmStepCount');
         this.btnPlay = document.getElementById('btnPlay');
         this.btnRec = document.getElementById('btnRec');
         this.btnClick = document.getElementById('btnClick');
         this.updateVisualizer();
+        this.updateCustomPresetButton();
+        this.updatePatternSlotButtons();
+        this.updateDrumSwing(this.swingAmount);
     }
     
     playClick(isAccent) {
@@ -98,6 +119,12 @@ class Sequencer {
     getStepMs() {
         const bpm = parseInt(this.bpmInput.value) || 120;
         return ((60 / bpm) * 1000) / 4;
+    }
+
+    getSwingStepMs(step) {
+        const amount = Math.max(0, Math.min(60, this.swingAmount)) / 100;
+        if (!amount) return this.getStepMs();
+        return this.getStepMs() * (step % 2 === 0 ? 1 + amount : 1 - amount);
     }
 
     ensureDrumPatternLength() {
@@ -177,6 +204,7 @@ class Sequencer {
 
                 cell.addEventListener('click', () => {
                     this.drumPattern[lane.id][step] = (this.drumPattern[lane.id][step] + 1) % 3;
+                    this.markDrumPatternEdited();
                     this.renderDrumMachine();
                 });
 
@@ -221,6 +249,8 @@ class Sequencer {
             this.btnPlay.classList.remove('active-play');
             this.btnPlay.textContent = '▶';
             clearTimeout(this.seqInterval);
+            this.fillStepsRemaining = 0;
+            this.updateFillButton();
             document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active', 'active-accent'));
             document.querySelectorAll('.dm-cell').forEach(cell => cell.classList.remove('playing', 'triggered'));
         }
@@ -248,16 +278,21 @@ class Sequencer {
 
         if (this.clickEnabled && isBeatStep) this.playClick(this.currentStep === 0);
         if (this.drumMachineEnabled) this.playDrumStep(this.currentStep);
+        if (this.fillStepsRemaining > 0) {
+            this.fillStepsRemaining -= 1;
+            if (this.fillStepsRemaining === 0) this.updateFillButton();
+        }
         this.updateDrumPlayhead();
         
         const nextStep = this.currentStep + 1;
+        const stepDelay = this.getSwingStepMs(this.currentStep);
         if (nextStep >= totalSteps && !this.drumLoopEnabled) {
-            this.seqInterval = setTimeout(() => this.togglePlay(), this.getStepMs());
+            this.seqInterval = setTimeout(() => this.togglePlay(), stepDelay);
             return;
         }
 
         this.currentStep = nextStep % totalSteps;
-        this.seqInterval = setTimeout(() => this.scheduleNextStep(), this.getStepMs());
+        this.seqInterval = setTimeout(() => this.scheduleNextStep(), stepDelay);
     }
 
     updateDrumPlayhead() {
@@ -269,9 +304,16 @@ class Sequencer {
     playDrumStep(step) {
         this.drumLanes.forEach(lane => {
             const state = this.drumPattern[lane.id] ? this.drumPattern[lane.id][step] : 0;
-            if (!state) return;
+            if (state) this.playDrumLaneAtStep(lane, step, state);
+        });
+        this.playFillStep(step);
+    }
 
-            const velocity = state === 2 ? 1 : 0.68;
+    playDrumLaneAtStep(lane, step, state) {
+        const baseVelocity = state === 2 ? 1 : 0.68;
+        const velocity = this.getHumanizedVelocity(baseVelocity);
+        const delay = this.getHumanizedDelay();
+        const trigger = () => {
             this.triggerDrum(lane.note, velocity);
 
             const cell = this.drumMachine ? this.drumMachine.querySelector(`.dm-cell[data-lane="${lane.id}"][data-step="${step}"]`) : null;
@@ -279,6 +321,42 @@ class Sequencer {
                 cell.classList.add('triggered');
                 setTimeout(() => cell.classList.remove('triggered'), 95);
             }
+        };
+
+        if (delay) {
+            setTimeout(trigger, delay);
+        } else {
+            trigger();
+        }
+    }
+
+    getHumanizedVelocity(velocity) {
+        if (!this.humanizeEnabled) return velocity;
+        return Math.max(0.35, Math.min(1, velocity * (0.9 + Math.random() * 0.18)));
+    }
+
+    getHumanizedDelay() {
+        if (!this.humanizeEnabled) return 0;
+        return Math.floor(Math.random() * 18);
+    }
+
+    playFillStep(step) {
+        if (this.fillStepsRemaining <= 0) return;
+
+        const totalSteps = this.getTotalSteps();
+        const progress = (step - this.fillStartStep + totalSteps) % totalSteps;
+        const lastBeatStart = Math.max(0, totalSteps - this.getStepsPerBeatUnit());
+        const fillHits = {
+            snare: [lastBeatStart],
+            hitom: [lastBeatStart + 1],
+            midtom: [lastBeatStart + 2],
+            floortom: [lastBeatStart + 3]
+        };
+
+        Object.entries(fillHits).forEach(([laneId, steps]) => {
+            if (!steps.includes(progress)) return;
+            const lane = this.drumLanes.find(item => item.id === laneId);
+            if (lane) this.playDrumLaneAtStep(lane, step, 1);
         });
     }
 
@@ -295,17 +373,18 @@ class Sequencer {
     getRecordStep() {
         if (!this.isPlaying) return 0;
         const elapsed = performance.now() - this.lastStepTime;
-        return elapsed > this.getStepMs() / 2 ? this.currentStep : this.playingStep;
+        return elapsed > this.getSwingStepMs(this.playingStep) / 2 ? this.currentStep : this.playingStep;
     }
 
     recordDrumHit(midiNote) {
-        if (!this.isRecording || !this.isPlaying) return;
+        if (!this.shouldCaptureDrumHit()) return;
         const lane = this.drumLanes.find(item => item.note === midiNote);
         if (!lane) return;
 
         const step = this.getRecordStep();
         const current = this.drumPattern[lane.id][step] || 0;
         this.drumPattern[lane.id][step] = current === 0 ? 1 : 2;
+        this.markDrumPatternEdited();
         this.renderDrumMachine();
 
         const cell = this.drumMachine ? this.drumMachine.querySelector(`.dm-cell[data-lane="${lane.id}"][data-step="${step}"]`) : null;
@@ -319,12 +398,102 @@ class Sequencer {
         this.drumLanes.forEach(lane => {
             this.drumPattern[lane.id] = Array(this.getTotalSteps()).fill(0);
         });
-        if (this.drumPreset) this.drumPreset.value = 'empty';
+    }
+
+    clonePatternData(pattern = {}) {
+        const totalSteps = this.getTotalSteps();
+        return this.drumLanes.reduce((copy, lane) => {
+            const source = Array.isArray(pattern[lane.id]) ? pattern[lane.id] : [];
+            copy[lane.id] = Array.from({ length: totalSteps }, (_, step) => source[step] || 0);
+            return copy;
+        }, {});
+    }
+
+    setPatternSlotsFromCurrent() {
+        const current = this.cloneDrumPattern();
+        this.patternSlots = {
+            A: this.clonePatternData(current),
+            B: this.clonePatternData(current)
+        };
+        this.activePatternSlot = 'A';
+        this.updatePatternSlotButtons();
+    }
+
+    storeActivePatternSlot() {
+        this.patternSlots[this.activePatternSlot] = this.cloneDrumPattern();
+    }
+
+    switchDrumPatternSlot(slot) {
+        if (slot !== 'A' && slot !== 'B') return;
+        if (slot === this.activePatternSlot) return;
+
+        this.storeActivePatternSlot();
+        if (!this.patternSlots[slot]) this.patternSlots[slot] = this.cloneDrumPattern();
+        this.activePatternSlot = slot;
+        this.writeDrumPattern(this.patternSlots[slot]);
+        this.updatePatternSlotButtons();
         this.renderDrumMachine();
     }
 
-    loadDrumPreset(name) {
+    updatePatternSlotButtons() {
+        if (this.btnPatternA) this.btnPatternA.classList.toggle('active', this.activePatternSlot === 'A');
+        if (this.btnPatternB) this.btnPatternB.classList.toggle('active', this.activePatternSlot === 'B');
+    }
+
+    getPresetStorageKey(name) {
+        return this.drumPresetStoragePrefix + name;
+    }
+
+    isCustomDrumPreset(name) {
+        return name === 'custom1' || name === 'custom2';
+    }
+
+    readSavedDrumPreset(name) {
+        try {
+            const stored = localStorage.getItem(this.getPresetStorageKey(name));
+            const fallback = name === 'custom1' ? localStorage.getItem(this.legacyCustomDrumPresetKey) : null;
+            return JSON.parse(stored || fallback || 'null');
+        } catch (error) {
+            console.warn('Unable to read drum preset', error);
+            return null;
+        }
+    }
+
+    writeDrumPattern(pattern) {
+        this.drumPattern = this.clonePatternData(pattern);
+    }
+
+    loadDrumPreset(name, options = {}) {
+        const saved = options.factory ? null : this.readSavedDrumPreset(name);
         this.clearDrumPattern();
+
+        if (saved && saved.patterns) {
+            this.patternSlots = {
+                A: this.clonePatternData(saved.patterns.A || saved.pattern || {}),
+                B: this.clonePatternData(saved.patterns.B || saved.pattern || {})
+            };
+            this.activePatternSlot = saved.activeSlot === 'B' ? 'B' : 'A';
+            this.writeDrumPattern(this.patternSlots[this.activePatternSlot]);
+        } else if (saved && saved.pattern) {
+            this.writeDrumPattern(saved.pattern);
+            this.setPatternSlotsFromCurrent();
+        } else if (!this.isCustomDrumPreset(name)) {
+            this.applyFactoryDrumPreset(name);
+            this.setPatternSlotsFromCurrent();
+        } else {
+            this.setPatternSlotsFromCurrent();
+        }
+
+        this.activeDrumPreset = name;
+        this.setDrumSaveDirty(false);
+        if (this.drumPreset) this.drumPreset.value = name;
+        this.updateCustomPresetButton();
+        this.updatePatternSlotButtons();
+        this.highlightDrumPreset();
+        this.renderDrumMachine();
+    }
+
+    applyFactoryDrumPreset(name) {
         const totalSteps = this.getTotalSteps();
         const set = (laneId, steps, accentSteps = []) => {
             if (!this.drumPattern[laneId]) return;
@@ -338,27 +507,177 @@ class Sequencer {
             set('kick', [0, 8], [0]);
             set('snare', [4, 12], [4, 12]);
             set('hihat', [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]);
+        } else if (name === 'rock') {
+            set('kick', [0, 6, 8], [0]);
+            set('snare', [4, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]);
+            set('crash', [0], [0]);
         } else if (name === 'four') {
             set('kick', [0, 4, 8, 12], [0]);
             set('snare', [4, 12], [4, 12]);
             set('hihat', [0, 2, 4, 6, 8, 10, 12, 14]);
             set('openhat', [6, 14]);
+        } else if (name === 'hiphop') {
+            set('kick', [0, 7, 10], [0]);
+            set('snare', [4, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 12, 14], [0]);
+        } else if (name === 'funk') {
+            set('kick', [0, 3, 8, 10], [0, 10]);
+            set('snare', [4, 7, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 5, 7, 8, 10, 12, 14]);
+            set('openhat', [6, 13]);
         } else if (name === 'break') {
             set('kick', [0, 3, 10], [0]);
             set('snare', [4, 7, 12], [4, 12]);
-            set('hihat', [0, 2, 4, 6, 8, 11, 12, 14]);
+            set('hihat', [0, 2, 4, 6, 8, 11, 12, 14], [0, 8]);
+            set('openhat', [13]);
             set('crash', [0], [0]);
-        } else if (name === 'fill') {
-            set('kick', [0, 8], [0]);
+        } else if (name === 'amen') {
+            set('kick', [0, 3, 10, 14], [0, 10]);
+            set('snare', [4, 6, 12, 15], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 11, 12, 14], [0, 8]);
+            set('openhat', [7]);
+            set('ride', [0, 10]);
+            set('crash', [0], [0]);
+        } else if (name === 'garage') {
+            set('kick', [0, 3, 7, 10], [0, 10]);
+            set('snare', [4, 11, 12], [4, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 12, 14], [0, 8, 14]);
+            set('openhat', [6, 13]);
+        } else if (name === 'dnb') {
+            set('kick', [0, 3, 10], [0, 10]);
             set('snare', [4, 12], [4, 12]);
-            set('hihat', [0, 2, 4, 6, 8, 10]);
-            set('hitom', [11]);
-            set('midtom', [12, 13]);
-            set('floortom', [14, 15], [15]);
+            set('hihat', [0, 2, 3, 4, 6, 8, 10, 12, 13, 14], [0, 8]);
+            set('openhat', [11]);
+        } else if (name === 'bossa') {
+            set('kick', [0, 6, 10], [0]);
+            set('snare', [3, 7, 12, 15], [3, 12]);
+            set('hihat', [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]);
+            set('ride', [0, 3, 6, 8, 11, 14]);
+        }
+    }
+
+    cloneDrumPattern() {
+        this.ensureDrumPatternLength();
+        return this.drumLanes.reduce((pattern, lane) => {
+            pattern[lane.id] = this.drumPattern[lane.id].slice();
+            return pattern;
+        }, {});
+    }
+
+    saveCustomDrumPreset() {
+        const targetPreset = this.activeDrumPreset === 'empty' ? 'custom1' : this.activeDrumPreset;
+        this.storeActivePatternSlot();
+        const payload = {
+            steps: this.getTotalSteps(),
+            pattern: this.cloneDrumPattern(),
+            patterns: {
+                A: this.clonePatternData(this.patternSlots.A || this.drumPattern),
+                B: this.clonePatternData(this.patternSlots.B || this.drumPattern)
+            },
+            activeSlot: this.activePatternSlot
+        };
+
+        try {
+            localStorage.setItem(this.getPresetStorageKey(targetPreset), JSON.stringify(payload));
+            this.activeDrumPreset = targetPreset;
+            this.setDrumSaveDirty(false);
+            this.highlightDrumPreset();
+            this.updateCustomPresetButton(true);
+        } catch (error) {
+            console.warn('Unable to save drum preset', error);
+        }
+    }
+
+    resetDrumPreset() {
+        const targetPreset = this.activeDrumPreset === 'empty' ? 'custom1' : this.activeDrumPreset;
+
+        try {
+            localStorage.removeItem(this.getPresetStorageKey(targetPreset));
+            if (targetPreset === 'custom1') localStorage.removeItem(this.legacyCustomDrumPresetKey);
+        } catch (error) {
+            console.warn('Unable to reset drum preset', error);
         }
 
-        if (this.drumPreset) this.drumPreset.value = name;
-        this.renderDrumMachine();
+        this.loadDrumPreset(targetPreset, { factory: true });
+    }
+
+    hasSavedDrumPreset(name) {
+        try {
+            return Boolean(localStorage.getItem(this.getPresetStorageKey(name)) || (name === 'custom1' && localStorage.getItem(this.legacyCustomDrumPresetKey)));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    updateCustomPresetButton(justSaved = false) {
+        document.querySelectorAll('.dm-preset-custom[data-preset]').forEach(button => {
+            const hasSaved = this.hasSavedDrumPreset(button.dataset.preset);
+            button.classList.toggle('has-custom', hasSaved);
+            button.title = hasSaved ? 'Load saved custom pattern' : 'Empty custom slot';
+        });
+
+        if (this.btnSaveCustomPreset) {
+            this.btnSaveCustomPreset.classList.toggle('needs-save', this.hasUnsavedDrumChanges);
+            this.btnSaveCustomPreset.title = this.hasUnsavedDrumChanges ? 'Save changes to current preset' : 'Save current preset';
+        }
+
+        if (this.btnSaveCustomPreset && justSaved) {
+            this.btnSaveCustomPreset.classList.add('saved');
+            setTimeout(() => this.btnSaveCustomPreset.classList.remove('saved'), 650);
+        }
+    }
+
+    highlightDrumPreset() {
+        document.querySelectorAll('.dm-preset[data-preset]').forEach(button => {
+            button.classList.toggle('active', button.dataset.preset === this.activeDrumPreset);
+        });
+    }
+
+    markDrumPatternEdited() {
+        if (this.activeDrumPreset === 'empty') this.activeDrumPreset = 'custom1';
+        this.setDrumSaveDirty(true);
+        this.highlightDrumPreset();
+    }
+
+    setDrumSaveDirty(isDirty) {
+        this.hasUnsavedDrumChanges = isDirty;
+        if (this.btnSaveCustomPreset) {
+            this.btnSaveCustomPreset.classList.toggle('needs-save', isDirty);
+            this.btnSaveCustomPreset.title = isDirty ? 'Save changes to current preset' : 'Save current preset';
+        }
+    }
+
+    updateDrumSwing(value) {
+        this.swingAmount = Math.max(0, Math.min(60, parseInt(value, 10) || 0));
+        if (this.dmSwing) this.dmSwing.value = this.swingAmount;
+        if (this.dmSwingValue) this.dmSwingValue.textContent = this.swingAmount;
+    }
+
+    toggleDrumHumanize() {
+        this.humanizeEnabled = !this.humanizeEnabled;
+        if (this.btnDrumHumanize) {
+            this.btnDrumHumanize.classList.toggle('active', this.humanizeEnabled);
+            this.btnDrumHumanize.textContent = this.humanizeEnabled ? 'HUMAN' : 'HUMAN';
+        }
+    }
+
+    triggerDrumFill() {
+        this.fillStepsRemaining = this.getTotalSteps();
+        this.fillStartStep = this.isPlaying ? this.currentStep : 0;
+        this.updateFillButton();
+    }
+
+    updateFillButton() {
+        if (this.btnDrumFill) {
+            this.btnDrumFill.classList.toggle('active', this.fillStepsRemaining > 0);
+        }
+    }
+
+    shouldCaptureDrumHit() {
+        if (!this.isPlaying) return false;
+        if (this.isRecording) return true;
+        return this.drumLoopEnabled && this.activeDrumPreset !== 'empty';
     }
 }
 
@@ -391,7 +710,15 @@ class AppController {
         window.updateSequencer = () => this.sequencer.updateVisualizer();
         window.toggleDrumMachine = () => this.sequencer.toggleDrumMachine();
         window.toggleDrumLoop = () => this.sequencer.toggleDrumLoop();
-        window.clearDrumPattern = () => this.sequencer.clearDrumPattern();
+        window.clearDrumPattern = () => this.sequencer.resetDrumPreset();
+        window.loadDrumPresetQuick = name => this.sequencer.loadDrumPreset(name);
+        window.saveCustomDrumPreset = () => this.sequencer.saveCustomDrumPreset();
+        window.resetDrumPreset = () => this.sequencer.resetDrumPreset();
+        window.loadCustomDrumPreset = () => this.sequencer.loadDrumPreset('custom1');
+        window.updateDrumSwing = value => this.sequencer.updateDrumSwing(value);
+        window.switchDrumPatternSlot = slot => this.sequencer.switchDrumPatternSlot(slot);
+        window.triggerDrumFill = () => this.sequencer.triggerDrumFill();
+        window.toggleDrumHumanize = () => this.sequencer.toggleDrumHumanize();
         window.loadDrumPreset = () => {
             const preset = document.getElementById('drumPreset');
             this.sequencer.loadDrumPreset(preset ? preset.value : 'empty');

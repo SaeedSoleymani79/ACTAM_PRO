@@ -155,18 +155,43 @@
                 <div class="dm-actions">
                   <button class="dm-action active" id="btnDrumMachine" onclick="toggleDrumMachine()">DM ON</button>
                   <button class="dm-action active-loop" id="btnDrumLoop" onclick="toggleDrumLoop()">LOOP ON</button>
-                  <select id="drumPreset" class="dm-select" onchange="loadDrumPreset()">
-                    <option value="empty">EMPTY</option>
-                    <option value="basic">BASIC</option>
-                    <option value="four">FOUR ON FLOOR</option>
-                    <option value="break">BREAK</option>
-                    <option value="fill">FILL</option>
-                  </select>
-                  <button class="dm-action" onclick="clearDrumPattern()">CLEAR</button>
                 </div>
               </div>
-              <div class="drum-machine-wrap">
-                <div class="drum-machine" id="drumMachine" aria-label="Drum machine pattern editor"></div>
+              <div class="drum-machine-body">
+                <div class="drum-machine-wrap">
+                  <div class="drum-machine" id="drumMachine" aria-label="Drum machine pattern editor"></div>
+                </div>
+                <div class="dm-preset-bank" aria-label="Drum pattern presets">
+                  <button class="dm-preset" data-preset="basic" onclick="loadDrumPresetQuick('basic')">BASIC</button>
+                  <button class="dm-preset" data-preset="rock" onclick="loadDrumPresetQuick('rock')">ROCK</button>
+                  <button class="dm-preset" data-preset="four" onclick="loadDrumPresetQuick('four')">4 FLOOR</button>
+                  <button class="dm-preset" data-preset="hiphop" onclick="loadDrumPresetQuick('hiphop')">HIPHOP</button>
+                  <button class="dm-preset" data-preset="funk" onclick="loadDrumPresetQuick('funk')">FUNK</button>
+                  <button class="dm-preset" data-preset="break" onclick="loadDrumPresetQuick('break')">BREAK</button>
+                  <button class="dm-preset" data-preset="amen" onclick="loadDrumPresetQuick('amen')">AMEN</button>
+                  <button class="dm-preset" data-preset="garage" onclick="loadDrumPresetQuick('garage')">GARAGE</button>
+                  <button class="dm-preset" data-preset="dnb" onclick="loadDrumPresetQuick('dnb')">DNB</button>
+                  <button class="dm-preset" data-preset="bossa" onclick="loadDrumPresetQuick('bossa')">BOSSA</button>
+                  <button class="dm-preset dm-preset-custom" data-preset="custom1" onclick="loadDrumPresetQuick('custom1')">CUSTOM 1</button>
+                  <button class="dm-preset dm-preset-custom" data-preset="custom2" onclick="loadDrumPresetQuick('custom2')">CUSTOM 2</button>
+                  <button class="dm-preset dm-preset-save" id="btnSaveCustomPreset" onclick="saveCustomDrumPreset()">SAVE</button>
+                  <button class="dm-preset dm-preset-reset" id="btnResetDrumPreset" onclick="resetDrumPreset()">RESET</button>
+                  <div class="dm-groove-controls">
+                    <div class="dm-swing-row">
+                      <span>SWING</span>
+                      <input type="range" id="dmSwing" min="0" max="60" value="0" oninput="updateDrumSwing(this.value)" />
+                      <span id="dmSwingValue">0</span>
+                    </div>
+                    <div class="dm-performance-row">
+                      <div class="dm-ab-toggle" aria-label="Pattern variation">
+                        <button class="dm-mini active" id="btnPatternA" onclick="switchDrumPatternSlot('A')">A</button>
+                        <button class="dm-mini" id="btnPatternB" onclick="switchDrumPatternSlot('B')">B</button>
+                      </div>
+                      <button class="dm-mini dm-fill" id="btnDrumFill" onclick="triggerDrumFill()">FILL</button>
+                      <button class="dm-mini" id="btnDrumHumanize" onclick="toggleDrumHumanize()">HUMAN</button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
