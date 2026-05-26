@@ -41,7 +41,7 @@ class AudioEngine:
         }
         
         # Instantiate Instruments
-        print("🔧 Precomputing Instruments (this may take a moment)...")
+        print("🔧 Precomputing Instruments (this may take a moment on first boot)...")
         self.instruments = {
             "piano": Piano(sr),
             "guitar": Guitar(sr),
@@ -49,15 +49,16 @@ class AudioEngine:
             "drums": Drums(sr)
         }
         
-        self.instruments["piano"].precompute(range(24, 105))
-        print("🎹 Piano ready!")
-        self.instruments["guitar"].precompute(range(24, 105))
-        print("🎸 Guitar ready!")
-        self.instruments["strings"].precompute(range(24, 105))
-        print("🎻 Strings ready!")
+        # NOTE: Using range(24, 105, 3) to compute only every 3rd note!
+        self.instruments["piano"].precompute(range(24, 105, 3))
+        self.instruments["guitar"].precompute(range(24, 105, 3))
+        self.instruments["strings"].precompute(range(24, 105, 3))
+        
+        # Drums don't pitch-shift well, so we load the specific hits normally
         self.instruments["drums"].precompute([36, 38, 41, 42, 45, 46, 48, 49, 51])
-        print("🥁 Drums ready!\n✅ Engine fully loaded!")
-
+        
+        print("✅ Engine fully loaded!")
+        
         self.current_vst = "piano"
         self.stream = sd.OutputStream(
             samplerate=self.sr, channels=1, dtype='float32', 
@@ -74,31 +75,45 @@ class AudioEngine:
                 self.active_notes.clear()
 
     def note_on(self, midi_id: int, freq: float, vst: str = None, velocity: float = 1.0):
-        with self.notes_lock:
-            target_vst = vst if vst and vst in self.instruments else self.current_vst
-            midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
-            inst = self.instruments[target_vst]
-            gain = float(np.clip(velocity, 0.0, 1.0))
-            
-            self.active_notes[midi_id] = {
-                'data': inst.get_note_data(midi_note),
-                'pos': 0.0,
-                'on': True,
-                'rel_pos': 0.0,
-                'vst': target_vst,
-                'midi_note': midi_note,
-                'gain': gain
-            }
-            if getattr(self, 'is_recording', False):
-                self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, int(127 * gain)))
-
-    def note_off(self, midi_id: int):
-        with self.notes_lock:
-            if midi_id in self.active_notes:
-                self.active_notes[midi_id]['on'] = False
+            with self.notes_lock:
+                target_vst = vst if vst and vst in self.instruments else self.current_vst
+                inst = self.instruments[target_vst]
+                gain = float(np.clip(velocity, 0.0, 1.0))
+                
+                # --- MULTISAMPLING LOGIC ---
+                if target_vst == "drums":
+                    actual_midi = midi_id
+                    root_note = midi_id
+                    base_speed = 1.0
+                else:
+                    actual_midi = round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
+                    remainder = actual_midi % 3
+                    if remainder == 1:
+                        root_note = actual_midi - 1
+                        pitch_offset = 1  # Shift up 1 semitone
+                    elif remainder == 2:
+                        root_note = actual_midi + 1
+                        pitch_offset = -1 # Shift down 1 semitone
+                    else:
+                        root_note = actual_midi
+                        pitch_offset = 0
+                        
+                    base_speed = float(2.0 ** (pitch_offset / 12.0))
+                # ---------------------------
+                
+                self.active_notes[midi_id] = {
+                    'data': inst.get_note_data(root_note), # Fetch the root note array
+                    'pos': 0.0,
+                    'on': True,
+                    'rel_pos': 0.0,
+                    'vst': target_vst,
+                    'midi_note': actual_midi,
+                    'base_speed': base_speed, # Store the pitch shift multiplier
+                    'gain': gain
+                }
                 if getattr(self, 'is_recording', False):
-                    midi_note = self.active_notes[midi_id].get('midi_note', midi_id)
-                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_note, 0))
+                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', actual_midi, int(127 * gain)))
+
     def chord_on(self, notes: list, vst: str = None):
         with self.notes_lock:
             target_vst = vst if vst and vst in self.instruments else self.current_vst
@@ -107,19 +122,44 @@ class AudioEngine:
             for note in notes:
                 midi_id = note['id']
                 freq = note['freq']
-                midi_note = midi_id if target_vst == "drums" else round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
+                
+                # --- MULTISAMPLING LOGIC ---
+                if target_vst == "drums":
+                    actual_midi = midi_id
+                    root_note = midi_id
+                    base_speed = 1.0
+                else:
+                    actual_midi = round(12 * np.log2(max(freq, 8.0) / 440.0) + 69)
+                    remainder = actual_midi % 3
+                    if remainder == 1:
+                        root_note, pitch_offset = actual_midi - 1, 1
+                    elif remainder == 2:
+                        root_note, pitch_offset = actual_midi + 1, -1
+                    else:
+                        root_note, pitch_offset = actual_midi, 0
+                    base_speed = float(2.0 ** (pitch_offset / 12.0))
+                # ---------------------------
                 
                 self.active_notes[midi_id] = {
-                    'data': inst.get_note_data(midi_note),
+                    'data': inst.get_note_data(root_note),
                     'pos': 0.0,
                     'on': True,
                     'rel_pos': 0.0,
                     'vst': target_vst,
-                    'midi_note': midi_note,
+                    'midi_note': actual_midi,
+                    'base_speed': base_speed,
                     'gain': 1.0
                 }
                 if getattr(self, 'is_recording', False):
-                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', midi_note, 64))
+                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_on', actual_midi, 64))
+
+    def note_off(self, midi_id: int):
+        with self.notes_lock:
+            if midi_id in self.active_notes:
+                self.active_notes[midi_id]['on'] = False
+                if getattr(self, 'is_recording', False):
+                    midi_note = self.active_notes[midi_id].get('midi_note', midi_id)
+                    self.midi_events.append((time.perf_counter() - self.record_start_time, 'note_off', midi_note, 0))
 
     def chord_off(self, note_ids: list):
         with self.notes_lock:
@@ -152,6 +192,8 @@ class AudioEngine:
                 if int(pos) >= dlen - 2:
                     dead.append(nid); continue
 
+                total_speed = speed * float(note.get('base_speed', 1.0))
+
                 frac_idx = pos + np.arange(frames, dtype=np.float32) * speed
                 int_idx = frac_idx.astype(np.int64)
                 np.clip(int_idx, 0, dlen - 2, out=int_idx)
@@ -165,7 +207,9 @@ class AudioEngine:
                     if note['rel_pos'] > 0.40: dead.append(nid)
 
                 mixed += chunk * float(note.get('gain', 1.0))
-                note['pos'] = float(frac_idx[-1] + speed)
+                
+                # Use total_speed when advancing the playhead position
+                note['pos'] = float(frac_idx[-1] + total_speed)
                 if int(note['pos']) >= dlen - 2: dead.append(nid)
                 
             for nid in dead: 
