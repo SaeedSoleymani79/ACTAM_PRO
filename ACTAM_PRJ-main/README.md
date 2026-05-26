@@ -1,4 +1,4 @@
-# 🎓 University Project: ACTAM PRO Audio Suite
+# 🎓 University Project: Advanced Coding Tools and Methodologies
 
 ### **Course: Advanced Coding Tools and Methodologies
 **Developers:** Saeid Soleimani & Hanxiang Gao
