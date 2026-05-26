@@ -251,8 +251,44 @@
               </div>
             </div>
           </div>
+          <div class="daw-panel arranger-panel">
+            <div class="arranger-header">
+              <div>
+                <div class="panel-header arranger-title">Arrangement</div>
+                <div class="arranger-sub" id="arrangerStatus">8 BAR DRAFT</div>
+              </div>
+              <div class="arranger-actions">
+                <button class="arr-btn" id="btnArrRec" onclick="toggleArrangementRecord()">REC</button>
+                <button class="arr-btn" onclick="saveArrangement()">SAVE</button>
+                <button class="arr-btn" onclick="loadArrangement()">LOAD</button>
+                <button class="arr-btn danger" onclick="clearArrangement()">CLEAR</button>
+              </div>
+            </div>
+            <div class="arranger-grid" id="arrangerGrid" aria-label="8 bar arrangement grid"></div>
+          </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+  <div class="midi-editor" id="midiEditor" style="display: none;">
+    <div class="midi-editor-panel">
+      <div class="midi-editor-top">
+        <div>
+          <div class="midi-editor-title" id="midiEditorTitle">MIDI EDIT</div>
+          <div class="midi-editor-sub" id="midiEditorSub">DOUBLE CLICK A BAR</div>
+        </div>
+        <button class="arr-btn" onclick="closeMidiEditor()">CLOSE</button>
+      </div>
+      <div class="midi-roll" id="midiRoll"></div>
+      <div class="midi-edit-actions">
+        <button class="arr-btn" onclick="editMidiNote('left')">LEFT</button>
+        <button class="arr-btn" onclick="editMidiNote('right')">RIGHT</button>
+        <button class="arr-btn" onclick="editMidiNote('up')">UP</button>
+        <button class="arr-btn" onclick="editMidiNote('down')">DOWN</button>
+        <button class="arr-btn" onclick="editMidiNote('shorter')">SHORT</button>
+        <button class="arr-btn" onclick="editMidiNote('longer')">LONG</button>
+        <button class="arr-btn danger" onclick="editMidiNote('delete')">DELETE</button>
       </div>
     </div>
   </div>

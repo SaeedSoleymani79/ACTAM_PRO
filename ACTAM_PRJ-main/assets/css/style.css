@@ -509,6 +509,186 @@ body.locked .synth-frame { pointer-events: none; opacity: .15; filter: blur(2px)
 .module.active .knob { cursor: ns-resize; border-color: #3a3a5a; }
 .knob-label { font-size: 8px; letter-spacing: 1px; color: #444; }
 
+.arranger-panel {
+  margin-top: 12px;
+  flex: 0 0 auto;
+}
+.arranger-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.arranger-title {
+  margin-bottom: 3px;
+}
+.arranger-sub {
+  color: #46544c;
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.arranger-actions,
+.midi-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.arr-btn {
+  height: 24px;
+  min-width: 44px;
+  padding: 0 7px;
+  background: #101019;
+  border: 1px solid #272738;
+  color: #777786;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .8px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+}
+.arr-btn:hover {
+  color: #eee;
+  border-color: #5a5a70;
+}
+.arr-btn.active {
+  color: #050508;
+  border-color: #ff4455;
+  background: #ff4455;
+  box-shadow: 0 0 12px rgba(255,68,85,.35);
+}
+.arr-btn.danger {
+  color: #ff7788;
+  border-color: #50303a;
+}
+.arranger-grid {
+  display: grid;
+  grid-template-columns: 54px repeat(8, minmax(22px, 1fr));
+  gap: 4px;
+}
+.arr-track-label,
+.arr-bar-head,
+.arr-cell {
+  min-height: 26px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 8px;
+  font-weight: 900;
+}
+.arr-track-label {
+  display: flex;
+  align-items: center;
+  color: #666674;
+  letter-spacing: .8px;
+}
+.arr-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #444452;
+  background: #07070c;
+  border: 1px solid #191924;
+}
+.arr-cell {
+  position: relative;
+  background: #101019;
+  border: 1px solid #272738;
+  cursor: pointer;
+  overflow: hidden;
+}
+.arr-cell.has-notes {
+  border-color: #334f44;
+  background: #0e2018;
+}
+.arr-cell.playing {
+  outline: 1px solid #ffaa00;
+  outline-offset: 1px;
+}
+.arr-clip {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 50%;
+  height: 8px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--track-color, #33ff99);
+  box-shadow: 0 0 8px rgba(51,255,153,.24);
+}
+.arr-count {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  color: #a8a8b8;
+  font-size: 8px;
+}
+.midi-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.72);
+}
+.midi-editor-panel {
+  width: min(760px, calc(100vw - 40px));
+  background: #08080e;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.75);
+}
+.midi-editor-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.midi-editor-title {
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.midi-editor-sub {
+  margin-top: 4px;
+  color: #555;
+  font-family: monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.midi-roll {
+  position: relative;
+  height: 230px;
+  background: repeating-linear-gradient(to right, #08080e 0, #08080e calc(6.25% - 1px), #181824 calc(6.25% - 1px), #181824 6.25%),
+              repeating-linear-gradient(to bottom, transparent 0, transparent 17px, rgba(255,255,255,.04) 18px);
+  border: 1px solid #20202c;
+  border-radius: 5px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.midi-note {
+  position: absolute;
+  height: 13px;
+  min-width: 8px;
+  border-radius: 3px;
+  background: #33ff99;
+  border: 1px solid rgba(255,255,255,.28);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(51,255,153,.28);
+}
+.midi-note.selected {
+  background: #ffaa00;
+  box-shadow: 0 0 14px rgba(255,170,0,.45);
+}
+
 .ws-dot { width: 7px; height: 7px; border-radius: 50%; background: #333; transition: background .3s, box-shadow .3s; display: inline-block; margin-left: 8px; }
 .ws-dot.ok  { background: #44ff77; box-shadow: 0 0 6px #44ff77; }
 .ws-dot.err { background: #ff4444; box-shadow: 0 0 6px #ff4444; }
