@@ -1,4 +1,4 @@
-# 🎓 University Project: ACTAM PRO Audio Suite
+# 🎓 University Project: Advanced Coding Tools and Methodologies
 
 ### **Course: Advanced Coding Tools and Methodologies
 **Developers:** Saeid Soleimani & Hanxiang Gao
@@ -9,74 +9,85 @@
 
 ---
 
-## 📌 Project Overview
-**ACTAM PRO** is a collaborative full-stack audio application developed to explore the intersection of **Web Technologies** and **Digital Audio Synthesis**. The project demonstrates how high-level languages like Python can be optimized using vectorized mathematics (**NumPy**) to perform real-time audio generation without relying on pre-recorded samples[cite: 3, 5].
+# ACTAM PRO | Audio Suite
 
-### **Core Functionalities:**
-*   **Algorithmic Synthesis:** Real-time generation of waveforms for Piano, Strings, Guitar, and Drums[cite: 5].
-*   **Low-Latency Communication:** Utilizing **WebSockets** for bi-directional, full-duplex data transfer between the UI and the Engine[cite: 2, 7].
-*   **DSP Effects Rack:** Custom implementation of Tremolo, Delay, and Reverb using digital delay lines and comb filters[cite: 4].
+**ACTAM PRO** is a real-time, hybrid web-to-Python audio synthesizer, sequencer, and performance suite. Developed as an academic project in Music and Acoustic Engineering, this system demonstrates low-latency audio processing, physical modeling concepts, and advanced musical user interfaces.
 
 ---
 
-## 📸 Project Interface
+## 🏗️ System Architecture
 
-### **Instrument Selection Menu**
-The entry point of the application where users can toggle between different synthesis models.
+The project is built on a decoupled **Client-Server Architecture**, separating the visual interface and sequence logic from the heavy digital signal processing (DSP) and audio rendering.
 
-![Menu Interface](ACTAM_PRJ-main/assets/menue.png)
+### 1. Frontend (The Controller)
+* **Tech Stack:** Vanilla HTML, CSS, and JavaScript.
+* **Role:** Acts as the central nervous system. It handles user input (mouse, QWERTY keyboard, virtual fretboard/keybed), manages the internal sequencer state, and calculates musical theory logic (scales, voicings). 
+* **Zero-Audio Policy:** The browser performs absolutely no audio synthesis, ensuring UI thread operations never cause audio dropouts.
 
-### **Main Performance Dashboard**
-The primary workspace featuring the melodic keybed, transport controls, and the Master FX rack.
+### 2. Backend (The Audio Engine)
+* **Tech Stack:** Python 3, `sounddevice`, `numpy`, `scipy`, `mido`.
+* **Role:** A high-performance audio engine that listens for control messages. It utilizes precomputed waveforms (additive synthesis, super-saw, physical modeling) mapped to MIDI notes to ensure zero-latency playback. It streams the mixed audio buffer directly to the system's DAC via `sounddevice`.
 
-![Main UI](ACTAM_PRJ-main/assets/keyboard.png)
-
-### **Virtual Percussion Layout**
-A specialized UI designed for trigger-based rhythmic performance using a spatial drum kit map.
-
-![Drums UI](ACTAM_PRJ-main/assets/drums.png)
-
----
-
-## 📽️ Functional Demonstration
-*(A screen walkthrough demonstrating the real-time response and audio quality of the synthesis engines.)*
-
-> **[https://youtu.be/Gx5ah5nWZkc]**
+### 3. Communication Layer
+* **Protocol:** WebSockets (`websockets` library in Python, native `WebSocket` API in JS).
+* **Payloads:** JSON-formatted messages (`note_on`, `chord_off`, `param`, `start_recording`, etc.) are transmitted instantly between the frontend controller and the backend engine.
 
 ---
 
-## ⚙️ Technical Implementation
+## ✨ Core Features
 
-### **1. Synthesis Models (`instruments.py`)**
-Each instrument represents a distinct academic approach to digital sound generation:
-*   **Additive Synthesis (Piano):** Synthesizing complex tones by summing multiple sine wave partials with unique exponential decay envelopes[cite: 5].
-*   **Physical Modeling (Guitar):** Implementation of the **Karplus-Strong algorithm**, utilizing a filtered delay line to simulate the physics of a plucked string[cite: 5].
-*   **Subtractive/Super-Saw (Strings):** Generating detuned sawtooth waves passed through a low-pass Butterworth filter[cite: 5].
+### 🥁 1. Advanced Drum Machine (New)
+A comprehensive 16-step rhythmic sequencer built into the UI.
+* **Pattern Management:** Dual pattern slots (A/B) for live variation, custom preset saving, and 10 factory groove presets (Rock, DnB, Lo-Fi, Bossa, etc.).
+* **Groove Controls:** Real-time **Swing** calculation and a **Humanize** function that introduces slight, randomized micro-delays and velocity variations to simulate a live drummer.
+* **Live Fills:** Dynamic auto-fill generation triggered at the end of a musical phrase.
 
-### **2. The Audio Engine (`engine.py`)**
-The "heart" of our system. It manages the `active_notes` dictionary and handles the high-priority `audio_callback`[cite: 3].
-*   **Vectorization:** To meet real-time constraints, we use **NumPy** to process blocks of 512 frames, significantly reducing CPU overhead compared to scalar loops[cite: 3, 4].
-*   **Polyphony Management:** A thread-safe locking mechanism ensures that multiple notes can be triggered and mixed simultaneously without audio dropouts[cite: 3].
+### 🎹 2. Smart Chord Pads & Voicing Algorithm (New)
+An interactive chord performance system mapped to hardware keys (1-7).
+* **Music Theory Engine:** Users select a root note and a scale (Major, Harmonic Minor, Dorian, Pentatonic, etc.), and the system automatically generates diatonic chord mapped to the pads.
+* **Intelligent Guitar Voicings:** When the "Guitar" instrument is active, the engine mathematically translates abstract chords into authentic, physically playable guitar fingerings across the virtual fretboard, rather than playing impossible block chords.
 
-### **3. Communication Architecture (`main.py` & `app.js`)**
-*   **WebSockets:** We chose WebSockets over standard HTTP to achieve the sub-20ms latency required for musical "feel" and responsive performance[cite: 2, 7].
-*   **State Synchronization:** Parameters like BPM, Reverb Mix, and Pitch Bend are synchronized across the network in real-time[cite: 2, 7].
+### 🔴 3. Recording Engine (New)
+Session capture handled directly by the Python backend.
+* **WAV Export:** Captures the raw `numpy` float32 output buffer frame-by-frame and writes it to a high-quality `.wav` file.
+* **MIDI Export:** Tracks performance events (`note_on`, `note_off`) with precise performance-counter timestamps, compiling them into a `.mid` file via the `mido` library.
+
+### 🎸 4. Hybrid Instrument Synthesis
+The engine uses precomputation to load instruments into memory during startup:
+* **Grand Piano:** Additive synthesis approach.
+* **Strings:** Super-saw generation with detuned oscillators.
+* **Guitar:** Physical modeling approach mimicking plucked string tension.
+* **Drums:** Sample/Synthesized percussion hits mapped to specific MIDI notes.
+
+### 🎛️ 5. Master Effects Rack
+A global DSP effects chain applied to the final mix:
+* **Live XY Expression Pad:** Modulates expression (volume) and tremolo depth via 2D canvas tracking.
+* **Tremolo:** LFO-based amplitude modulation with adjustable rate and depth.
+* **Delay:** Feedback loop with adjustable time, feedback ratio, and wet mix.
+* **Reverb:** Spatial simulation applied to the master bus.
 
 ---
 
-## 🛠️ How to Run
-1.  Ensure **Python 3.10+** is installed on your machine.
-2.  Install the necessary scientific and audio libraries:  
-    `pip install -r requirements.txt`
-3.  Launch the application using the provided script:
-    *   **Windows:** `run.bat`[cite: 8]
-    *   **Linux/Mac:** `sh run.sh`[cite: 8]
-4.  Open your browser to the local address provided in the terminal (default: `ws://localhost:8765`)[cite: 2].
+## 🚀 Installation & Boot Process
 
----
+The boot sequence has been optimized for a seamless user experience. 
 
-## 📚 References & Libraries
-*   **NumPy:** For high-speed matrix and array operations[cite: 3, 4].
-*   **Sounddevice:** PortAudio interface for Python-based audio output[cite: 3].
-*   **SciPy:** For IIR filter design and digital signal processing[cite: 5].
-*   **WebSockets:** For the low-latency communication layer[cite: 2, 7].
+1. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+
+2. **Launch the Suite:**
+   ```bash
+   python start.py
+
+Boot Sequence Flow:
+
+start.py immediately opens index.html in the default browser, presenting a dynamic "Loading Audio Engine" screen.
+
+The Python backend (main.py) begins generating and precomputing instrument arrays (Piano, Strings, Guitar, Drums).
+
+The JavaScript WebSocket client continuously polls the background port (8765).
+
+Once the audio engine is fully loaded and opens the port, the UI receives the handshake, the loading screen slides away, and the system is ready for real-time performance.
+
+Developed for research and presentation in Music and Acoustic Engineering.

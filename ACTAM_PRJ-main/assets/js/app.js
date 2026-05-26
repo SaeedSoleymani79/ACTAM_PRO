@@ -1,20 +1,46 @@
 // --- WEBSOCKET CLIENT CLASS ---
+// --- WEBSOCKET CLIENT CLASS ---
 class AudioClient {
-    constructor(url) {
+    constructor(url, onConnect) {
         this.url = url;
         this.ws = null;
         this.dot = document.getElementById('wsDot');
+        this.onConnect = onConnect;
+        this.retryTimer = null;
         this.connect();
     }
+    
     connect() {
-        this.ws = new WebSocket(this.url);
-        this.ws.addEventListener('open', () => { if (this.dot) this.dot.className = 'ws-dot ok'; });
-        this.ws.addEventListener('close', () => {
-            if (this.dot) this.dot.className = 'ws-dot err';
-            setTimeout(() => this.connect(), 2500);
-        });
-        this.ws.addEventListener('error', () => {});
+        // Prevent duplicate connection loops
+        clearTimeout(this.retryTimer);
+        if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+            return;
+        }
+        
+        try {
+            this.ws = new WebSocket(this.url);
+            
+            this.ws.addEventListener('open', () => { 
+                console.log("🟢 Audio Server Connected!");
+                if (this.dot) this.dot.className = 'ws-dot ok'; 
+                if (this.onConnect) this.onConnect(); 
+            });
+            
+            this.ws.addEventListener('close', () => {
+                console.log("🟠 Waiting for Audio Server...");
+                if (this.dot) this.dot.className = 'ws-dot err';
+                // Poll every 1 second until the Python server finishes loading
+                this.retryTimer = setTimeout(() => this.connect(), 1000);
+            });
+            
+            this.ws.addEventListener('error', () => {
+                // Silent catch. The 'close' event will handle the retry logic.
+            });
+        } catch (e) {
+            this.retryTimer = setTimeout(() => this.connect(), 1000);
+        }
     }
+    
     send(obj) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(obj));
@@ -684,7 +710,7 @@ class Sequencer {
 // --- MAIN APPLICATION CONTROLLER ---
 class AppController {
     constructor() {
-        this.client = new AudioClient('ws://localhost:8765');
+        this.client = new AudioClient('ws://localhost:8765', () => this.handleServerReady());
         this.sequencer = new Sequencer(this.client);
         this.isPlayable = false;
         this.activeVst = 'piano';
@@ -703,6 +729,7 @@ class AppController {
         this.initFretboard(); 
         this.initChordPads();
         this.initEventListeners();
+        this.initXYPad();
         
         window.enterInstrument = this.enterInstrument.bind(this);
         window.goMenu = this.goMenu.bind(this);
@@ -808,6 +835,88 @@ class AppController {
         });
     }
 
+    // --- EXPRESSION XY PAD LOGIC ---
+    initXYPad() {
+        const canvas = document.getElementById('xyPad');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let isDragging = false;
+
+        // Default Python Engine State: Modulation = 0.0 (Left), Expression = 1.0 (Top)
+        let currentX = 0; 
+        let currentY = 0; 
+
+        const resizeCanvas = () => {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height || 120;
+            drawPad();
+        };
+
+        const drawPad = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw center crosshairs
+            ctx.strokeStyle = '#1a1a24';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.moveTo(0, canvas.height / 2);
+            ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+
+            // Draw glowing cursor
+            ctx.beginPath();
+            ctx.arc(currentX, currentY, 6, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 68, 85, 0.45)';
+            ctx.fill();
+            ctx.strokeStyle = '#ff4455';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        };
+
+        const updateValues = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            currentX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            currentY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+            
+            const mod = currentX / rect.width;               // 0.0 to 1.0 (X Axis)
+            const expr = 1.0 - (currentY / rect.height);     // 1.0 at top, 0.0 at bottom (Y Axis)
+
+            drawPad();
+            
+            if (this.client) {
+                this.client.send({ type: 'param', name: 'modulation', val: mod });
+                this.client.send({ type: 'param', name: 'expression', val: expr });
+            }
+        };
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            updateValues(e);
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDragging) updateValues(e);
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+        
+        window.addEventListener('resize', resizeCanvas);
+
+        // Allow CSS to render layout widths, then draw pad
+        setTimeout(() => {
+            resizeCanvas();
+            currentX = 0; 
+            currentY = 0; 
+            drawPad();
+        }, 100);
+    }
+
+    
     updateFretboard(actualMidi, isOn) {
         const dots = document.querySelectorAll(`.note-dot[data-midi="${actualMidi}"]`);
         dots.forEach(dot => {
@@ -1174,6 +1283,7 @@ class AppController {
     // --- SETUP / INITIALIZATION ---
     initSplash() {
         const canvas = document.getElementById('particles');
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const resize = () => { canvas.width = innerWidth; canvas.height = innerHeight; };
         resize(); window.addEventListener('resize', resize);
@@ -1185,7 +1295,6 @@ class AppController {
             hue: Math.random() > 0.7 ? 340 : 220
         }));
         
-        let raf;
         const loop = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             DOTS.forEach(d => {
@@ -1194,18 +1303,67 @@ class AppController {
                 ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
                 ctx.fillStyle = `hsla(${d.hue},80%,70%,${d.a})`; ctx.fill();
             });
-            raf = requestAnimationFrame(loop);
+            this.splashRaf = requestAnimationFrame(loop);
         };
         loop();
 
         const letters = document.querySelectorAll('.splash-logo span');
         letters.forEach((l, i) => setTimeout(() => l.classList.add('vis'), 500 + i * 130));
-        setTimeout(() => document.querySelector('.splash-sub').classList.add('vis'), 1400);
+        
+        const sub = document.getElementById('splashSub');
+        if (sub) {
+            setTimeout(() => sub.classList.add('vis'), 1400);
+        }
+    }
+
+    handleServerReady() {
+        const splash = document.getElementById('splash');
+        const sub = document.getElementById('splashSub');
+        const menu = document.getElementById('menu');
+        
+        // If we are already out of the splash screen, do nothing
+        if (splash && splash.classList.contains('out')) return;
+
+        // 1. Update text to show success immediately
+        if (sub) {
+            sub.textContent = "SYSTEM READY";
+            sub.style.color = "#33ff99";
+            sub.classList.add('vis'); // Ensure it is visible if page refreshed
+        }
+        
+        // 2. Wait a brief moment so the user sees "SYSTEM READY", then slide to menu
         setTimeout(() => {
-            document.getElementById('splash').classList.add('out');
-            document.getElementById('menu').classList.remove('out');
-            cancelAnimationFrame(raf);
-        }, 3200);
+            if (splash) splash.classList.add('out');
+            if (menu) menu.classList.remove('out');
+            
+            // Kill particle animation to save CPU
+            if (this.splashRaf) cancelAnimationFrame(this.splashRaf);
+        }, 800);
+    }
+    
+    handleServerReady() {
+        const sub = document.getElementById('splashSub');
+        const splash = document.getElementById('splash');
+        
+        // Prevent re-triggering if the app is already in the menu
+        if (splash && splash.classList.contains('out')) return;
+
+        // Change text to reflect connection success
+        if (sub) {
+            sub.textContent = "SYSTEM READY";
+            sub.style.color = "#33ff99";
+            sub.classList.add('vis'); // Force visible in case of instant page refresh
+        }
+        
+        // Wait 0.8 seconds so the user can read "SYSTEM READY", then slide to menu
+        setTimeout(() => {
+            if (splash) splash.classList.add('out');
+            const menu = document.getElementById('menu');
+            if (menu) menu.classList.remove('out');
+            
+            // Turn off background particles to save CPU while making music
+            if (this.splashRaf) cancelAnimationFrame(this.splashRaf);
+        }, 800);
     }
 
     initKeyboard() {
@@ -1273,7 +1431,7 @@ class AppController {
             this.heldKeys.add(key);
             
             // NEW: Hardware 1-7 triggers Smart Pads!
-            if (['1','2','3','4','5','6','7'].includes(key) && this.activeVst !== 'drums') {
+            if (this.keyboardChordMode && ['1','2','3','4','5','6','7'].includes(key) && this.activeVst !== 'drums') {
                 e.preventDefault();
                 this.triggerChord(parseInt(key) - 1, true);
                 return;
@@ -1293,7 +1451,7 @@ class AppController {
             const key = e.key.toLowerCase(); this.heldKeys.delete(key);
             
             // NEW: Release 1-7 Smart Pads!
-            if (['1','2','3','4','5','6','7'].includes(key) && this.activeVst !== 'drums') {
+            if (this.keyboardChordMode && ['1','2','3','4','5','6','7'].includes(key) && this.activeVst !== 'drums') {
                 this.triggerChord(parseInt(key) - 1, false);
                 return;
             }
