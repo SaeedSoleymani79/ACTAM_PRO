@@ -1,4 +1,6 @@
 # instruments.py
+import os
+import pickle
 import numpy as np
 from scipy.signal import lfilter, butter, sosfilt
 
@@ -16,8 +18,23 @@ class Instrument:
         raise NotImplementedError("Subclasses must implement this.")
 
     def precompute(self, notes: list):
+        # 1. Check if a cache file exists for this specific instrument
+        cache_file = f"cache_{self.__class__.__name__.lower()}.pkl"
+        
+        if os.path.exists(cache_file):
+            print(f"   [Cache] Loading {self.__class__.__name__} from disk...")
+            with open(cache_file, 'rb') as f:
+                self.library = pickle.load(f)
+            return
+
+        # 2. If no cache, perform heavy DSP generation
+        print(f"   [DSP] Generating {self.__class__.__name__}...")
         for m in notes:
             self.library[m] = self.generate_note(m)
+            
+        # 3. Save the result to disk for the next boot
+        with open(cache_file, 'wb') as f:
+            pickle.dump(self.library, f)
 
     def get_note_data(self, midi_note: int) -> np.ndarray:
         m = max(min(int(midi_note), max(self.library.keys())), min(self.library.keys()))
