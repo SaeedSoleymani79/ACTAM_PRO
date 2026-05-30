@@ -72,6 +72,7 @@ class Sequencer {
         this.humanizeEnabled = false;
         this.fillStepsRemaining = 0;
         this.fillStartStep = 0;
+        this.onPatternChange = null;
         this.drumLanes = [
             { id: 'crash', label: 'CRASH', note: 49, key: 'R' },
             { id: 'ride', label: 'RIDE', note: 51, key: 'Y' },
@@ -232,6 +233,7 @@ class Sequencer {
                     this.drumPattern[lane.id][step] = (this.drumPattern[lane.id][step] + 1) % 3;
                     this.markDrumPatternEdited();
                     this.renderDrumMachine();
+                    this.notifyDrumPatternChanged();
                 });
 
                 this.drumMachine.appendChild(cell);
@@ -270,11 +272,13 @@ class Sequencer {
             this.currentStep = 0;
             this.playingStep = 0;
             this.lastStepTime = performance.now();
+            if (this.arrangement) this.arrangement.resetPlayback();
             this.scheduleNextStep();
         } else {
             this.btnPlay.classList.remove('active-play');
             this.btnPlay.textContent = '▶';
             clearTimeout(this.seqInterval);
+            if (this.arrangement) this.arrangement.stopPlaybackNotes();
             this.fillStepsRemaining = 0;
             this.updateFillButton();
             document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active', 'active-accent'));
@@ -304,6 +308,7 @@ class Sequencer {
 
         if (this.clickEnabled && isBeatStep) this.playClick(this.currentStep === 0);
         if (this.drumMachineEnabled) this.playDrumStep(this.currentStep);
+        if (this.arrangement) this.arrangement.handleTick();
         if (this.fillStepsRemaining > 0) {
             this.fillStepsRemaining -= 1;
             if (this.fillStepsRemaining === 0) this.updateFillButton();
@@ -412,12 +417,17 @@ class Sequencer {
         this.drumPattern[lane.id][step] = current === 0 ? 1 : 2;
         this.markDrumPatternEdited();
         this.renderDrumMachine();
+        this.notifyDrumPatternChanged();
 
         const cell = this.drumMachine ? this.drumMachine.querySelector(`.dm-cell[data-lane="${lane.id}"][data-step="${step}"]`) : null;
         if (cell) {
             cell.classList.add('captured');
             setTimeout(() => cell.classList.remove('captured'), 160);
         }
+    }
+
+    notifyDrumPatternChanged() {
+        if (this.onPatternChange) this.onPatternChange(this);
     }
 
     clearDrumPattern() {
@@ -459,6 +469,7 @@ class Sequencer {
         this.writeDrumPattern(this.patternSlots[slot]);
         this.updatePatternSlotButtons();
         this.renderDrumMachine();
+        this.notifyDrumPatternChanged();
     }
 
     updatePatternSlotButtons() {
@@ -517,6 +528,7 @@ class Sequencer {
         this.updatePatternSlotButtons();
         this.highlightDrumPreset();
         this.renderDrumMachine();
+        this.notifyDrumPatternChanged();
     }
 
     applyFactoryDrumPreset(name) {
@@ -707,11 +719,400 @@ class Sequencer {
     }
 }
 
+class Arrangement {
+    constructor(client, sequencer) {
+        this.client = client;
+        this.sequencer = sequencer;
+        this.bars = 8;
+        this.tracks = ['piano', 'strings', 'guitar', 'drums'];
+        this.trackColors = {
+            piano: '#33ff99',
+            strings: '#ffcc66',
+            guitar: '#55ccff',
+            drums: '#ff6677'
+        };
+        this.notes = this.tracks.reduce((acc, track) => ({ ...acc, [track]: [] }), {});
+        this.activeTakes = new Map();
+        this.recording = false;
+        this.playheadStep = 0;
+        this.lastTickStep = 0;
+        this.lastTickAt = performance.now();
+        this.playingNotes = [];
+        this.editor = { track: null, bar: 0, selected: null };
+        this.storageKey = 'actamArrangementDraft';
+        this.initDOM();
+    }
+
+    initDOM() {
+        this.grid = document.getElementById('arrangerGrid');
+        this.status = document.getElementById('arrangerStatus');
+        this.recButton = document.getElementById('btnArrRec');
+        this.editorEl = document.getElementById('midiEditor');
+        this.editorTitle = document.getElementById('midiEditorTitle');
+        this.editorSub = document.getElementById('midiEditorSub');
+        this.midiRoll = document.getElementById('midiRoll');
+        this.render();
+    }
+
+    getBarSteps() {
+        return this.sequencer.getTotalSteps();
+    }
+
+    getTotalSteps() {
+        return this.getBarSteps() * this.bars;
+    }
+
+    getStepMs() {
+        return this.sequencer.getStepMs();
+    }
+
+    getLoopMs() {
+        return this.getTotalSteps() * this.getStepMs();
+    }
+
+    stepToMs(step) {
+        return step * this.getStepMs();
+    }
+
+    msToStep(ms) {
+        return Math.max(0, Math.min(this.getTotalSteps() - 1, Math.round(ms / this.getStepMs())));
+    }
+
+    getCurrentStep() {
+        return this.playheadStep % this.getTotalSteps();
+    }
+
+    getCurrentMs() {
+        if (!this.sequencer.isPlaying) return this.stepToMs(this.getCurrentStep());
+        const elapsed = performance.now() - this.lastTickAt;
+        return (this.stepToMs(this.lastTickStep) + elapsed) % this.getLoopMs();
+    }
+
+    getCurrentBarIndex() {
+        const barMs = this.getLoopMs() / this.bars;
+        return Math.max(0, Math.min(this.bars - 1, Math.floor(this.getCurrentMs() / barMs)));
+    }
+
+    toggleRecord() {
+        this.recording = !this.recording;
+        if (!this.recording) this.flushActiveTakes();
+        if (this.recButton) this.recButton.classList.toggle('active', this.recording);
+        this.updateStatus();
+        return this.recording;
+    }
+
+    flushActiveTakes() {
+        [...this.activeTakes.values()].forEach(take => {
+            const endMs = this.getCurrentMs();
+            let durationMs = (endMs - take.startMs + this.getLoopMs()) % this.getLoopMs();
+            if (durationMs < 35) durationMs = 120;
+            this.addNote(take.track, take.midi, take.startMs, durationMs, take.velocity);
+        });
+        this.activeTakes.clear();
+    }
+
+    updateStatus() {
+        if (!this.status) return;
+        const bar = Math.floor(this.getCurrentMs() / (this.getLoopMs() / this.bars)) + 1;
+        this.status.textContent = `${this.recording ? 'ARR REC' : '8 BAR DRAFT'} · BAR ${bar}`;
+    }
+
+    resetPlayback() {
+        this.playheadStep = 0;
+        this.lastTickStep = 0;
+        this.lastTickAt = performance.now();
+        this.stopPlaybackNotes();
+        this.renderPlayhead();
+    }
+
+    stopPlaybackNotes() {
+        this.playingNotes.forEach(note => {
+            this.client.send({ type: 'note_off', id: note.playId });
+            if (note.timer) clearTimeout(note.timer);
+        });
+        this.playingNotes = [];
+    }
+
+    handleTick() {
+        const step = this.getCurrentStep();
+        this.lastTickStep = step;
+        this.lastTickAt = performance.now();
+        this.startNotesInWindow(this.stepToMs(step), this.stepToMs(step + 1), step);
+        this.renderPlayhead();
+        this.playheadStep = (this.playheadStep + 1) % this.getTotalSteps();
+        this.updateStatus();
+    }
+
+    startNotesInWindow(startMs, endMs, step) {
+        const loopMs = this.getLoopMs();
+        const wrapped = endMs >= loopMs;
+        const windowEnd = endMs % loopMs;
+        this.tracks.forEach((track, trackIndex) => {
+            this.notes[track].forEach((note, index) => {
+                const inWindow = wrapped
+                    ? note.startMs >= startMs || note.startMs < windowEnd
+                    : note.startMs >= startMs && note.startMs < endMs;
+                if (!inWindow) return;
+
+                const offset = wrapped && note.startMs < windowEnd
+                    ? (loopMs - startMs) + note.startMs
+                    : Math.max(0, note.startMs - startMs);
+                setTimeout(() => this.playNote(track, trackIndex, note, step, index), offset);
+            });
+        });
+    }
+
+    playNote(track, trackIndex, note, step, index) {
+        if (track === 'drums') {
+            this.client.send({ type: 'note_on', id: note.midi, freq: 0, vst: 'drums', velocity: note.velocity || 1 });
+            return;
+        }
+
+        const playId = 90000 + trackIndex * 100000 + step * 100 + index;
+        this.client.send({ type: 'note_on', id: playId, freq: this.midiToFreq(note.midi), vst: track, velocity: note.velocity || 1 });
+        const timer = setTimeout(() => {
+            this.client.send({ type: 'note_off', id: playId });
+            this.playingNotes = this.playingNotes.filter(item => item.playId !== playId);
+        }, Math.max(35, note.durationMs || this.getStepMs()));
+        this.playingNotes.push({ ...note, playId, timer });
+    }
+
+    midiToFreq(midi) {
+        return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    recordNoteOn(track, midi, velocity = 1) {
+        if (!this.recording || !this.tracks.includes(track) || track === 'drums') return;
+        const key = `${track}:${midi}`;
+        if (this.activeTakes.has(key)) return;
+        this.activeTakes.set(key, {
+            track,
+            midi,
+            velocity,
+            startMs: this.getCurrentMs()
+        });
+    }
+
+    recordNoteOff(track, midi) {
+        if (!this.recording || !this.tracks.includes(track) || track === 'drums') return;
+        const key = `${track}:${midi}`;
+        const take = this.activeTakes.get(key);
+        if (!take) return;
+
+        this.activeTakes.delete(key);
+        const endMs = this.getCurrentMs();
+        let durationMs = (endMs - take.startMs + this.getLoopMs()) % this.getLoopMs();
+        if (durationMs < 35) durationMs = 120;
+        this.addNote(take.track, take.midi, take.startMs, durationMs, take.velocity);
+    }
+
+    captureDrumPattern(sequencer, targetBar = this.getCurrentBarIndex()) {
+        if (!sequencer) return;
+        targetBar = Math.max(0, Math.min(this.bars - 1, targetBar));
+        sequencer.ensureDrumPatternLength();
+        const barMs = this.getLoopMs() / this.bars;
+        const barStartMs = targetBar * barMs;
+        const barEndMs = barStartMs + barMs;
+        const barSteps = this.getBarSteps();
+
+        this.notes.drums = this.notes.drums.filter(note => note.startMs < barStartMs || note.startMs >= barEndMs);
+        sequencer.drumLanes.forEach(lane => {
+            const pattern = sequencer.drumPattern[lane.id] || [];
+            pattern.forEach((state, step) => {
+                if (!state) return;
+                this.addNote('drums', lane.note, this.stepToMs(targetBar * barSteps + step), this.getStepMs(), state === 2 ? 1 : 0.68, false);
+            });
+        });
+        this.render();
+    }
+
+    addNote(track, midi, startMs, durationMs, velocity = 1, shouldRender = true) {
+        const startStep = this.msToStep(startMs);
+        const durationSteps = Math.max(1, Math.round(durationMs / this.getStepMs()));
+        const note = {
+            id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            midi,
+            startMs,
+            durationMs,
+            startStep,
+            durationSteps,
+            velocity
+        };
+        this.notes[track].push(note);
+        this.sortTrack(track);
+        if (shouldRender) this.render();
+    }
+
+    sortTrack(track) {
+        this.notes[track].sort((a, b) => a.startMs - b.startMs || a.midi - b.midi);
+    }
+
+    render() {
+        if (!this.grid) return;
+        const barMs = this.getLoopMs() / this.bars;
+        this.grid.innerHTML = '<div></div>';
+        for (let bar = 0; bar < this.bars; bar++) {
+            const head = document.createElement('div');
+            head.className = 'arr-bar-head';
+            head.textContent = bar + 1;
+            this.grid.appendChild(head);
+        }
+
+        this.tracks.forEach(track => {
+            const label = document.createElement('div');
+            label.className = 'arr-track-label';
+            label.textContent = track.toUpperCase();
+            this.grid.appendChild(label);
+
+            for (let bar = 0; bar < this.bars; bar++) {
+                const cell = document.createElement('div');
+                const count = this.getNotesInBar(track, bar).length;
+                cell.className = `arr-cell${count ? ' has-notes' : ''}`;
+                cell.dataset.track = track;
+                cell.dataset.bar = bar;
+                cell.style.setProperty('--track-color', this.trackColors[track]);
+                cell.addEventListener('dblclick', () => this.openEditor(track, bar));
+
+                if (count) {
+                    const clip = document.createElement('div');
+                    clip.className = 'arr-clip';
+                    cell.appendChild(clip);
+                    const badge = document.createElement('span');
+                    badge.className = 'arr-count';
+                    badge.textContent = count;
+                    cell.appendChild(badge);
+                }
+
+                const playBar = Math.floor(this.getCurrentMs() / barMs);
+                if (playBar === bar) cell.classList.add('playing');
+                this.grid.appendChild(cell);
+            }
+        });
+        this.updateStatus();
+    }
+
+    renderPlayhead() {
+        if (!this.grid) return;
+        const bar = Math.floor(this.getCurrentMs() / (this.getLoopMs() / this.bars));
+        this.grid.querySelectorAll('.arr-cell').forEach(cell => {
+            cell.classList.toggle('playing', parseInt(cell.dataset.bar, 10) === bar);
+        });
+    }
+
+    getNotesInBar(track, bar) {
+        const barMs = this.getLoopMs() / this.bars;
+        const start = bar * barMs;
+        const end = start + barMs;
+        return this.notes[track].filter(note => note.startMs >= start && note.startMs < end);
+    }
+
+    openEditor(track, bar) {
+        this.editor = { track, bar, selected: null };
+        if (this.editorEl) this.editorEl.style.display = 'flex';
+        this.renderEditor();
+    }
+
+    closeEditor() {
+        if (this.editorEl) this.editorEl.style.display = 'none';
+    }
+
+    renderEditor() {
+        if (!this.midiRoll || !this.editor.track) return;
+        const { track, bar, selected } = this.editor;
+        const barMs = this.getLoopMs() / this.bars;
+        const notes = this.getNotesInBar(track, bar);
+        const minMidi = track === 'drums' ? 35 : 36;
+        const maxMidi = track === 'drums' ? 52 : 84;
+
+        if (this.editorTitle) this.editorTitle.textContent = `${track.toUpperCase()} · BAR ${bar + 1}`;
+        if (this.editorSub) this.editorSub.textContent = `${notes.length} NOTES · SELECT A NOTE TO EDIT`;
+        this.midiRoll.innerHTML = '';
+
+        notes.forEach(note => {
+            const noteEl = document.createElement('button');
+            noteEl.type = 'button';
+            noteEl.className = `midi-note${selected === note.id ? ' selected' : ''}`;
+            noteEl.style.left = `${((note.startMs - bar * barMs) / barMs) * 100}%`;
+            noteEl.style.width = `${Math.max(5, (note.durationMs / barMs) * 100)}%`;
+            noteEl.style.top = `${Math.max(0, Math.min(94, (1 - ((note.midi - minMidi) / (maxMidi - minMidi))) * 92))}%`;
+            noteEl.style.background = this.trackColors[track];
+            noteEl.title = `${note.midi}`;
+            noteEl.addEventListener('click', () => {
+                this.editor.selected = note.id;
+                this.renderEditor();
+            });
+            this.midiRoll.appendChild(noteEl);
+        });
+    }
+
+    editSelected(action) {
+        const { track, bar, selected } = this.editor;
+        if (!track || !selected) return;
+
+        const stepMs = this.getStepMs();
+        const barMs = this.getLoopMs() / this.bars;
+        const barStart = bar * barMs;
+        const barEnd = barStart + barMs - stepMs;
+        const note = this.notes[track].find(item => item.id === selected);
+        if (!note) return;
+
+        if (action === 'left') note.startMs = Math.max(barStart, note.startMs - stepMs);
+        if (action === 'right') note.startMs = Math.min(barEnd, note.startMs + stepMs);
+        if (action === 'up' && track !== 'drums') note.midi = Math.min(96, note.midi + 1);
+        if (action === 'down' && track !== 'drums') note.midi = Math.max(24, note.midi - 1);
+        if (action === 'shorter') note.durationMs = Math.max(stepMs, note.durationMs - stepMs);
+        if (action === 'longer') note.durationMs = Math.min(barMs, note.durationMs + stepMs);
+        if (action === 'delete') {
+            this.notes[track] = this.notes[track].filter(item => item.id !== selected);
+            this.editor.selected = null;
+        }
+        note.startStep = this.msToStep(note.startMs);
+        note.durationSteps = Math.max(1, Math.round(note.durationMs / stepMs));
+
+        this.sortTrack(track);
+        this.render();
+        this.renderEditor();
+    }
+
+    save() {
+        this.flushActiveTakes();
+        localStorage.setItem(this.storageKey, JSON.stringify({ notes: this.notes }));
+        if (this.status) this.status.textContent = 'SAVED';
+    }
+
+    load() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(this.storageKey));
+            if (saved && saved.notes) {
+                this.notes = this.tracks.reduce((acc, track) => ({ ...acc, [track]: saved.notes[track] || [] }), {});
+                this.render();
+            }
+        } catch (error) {
+            console.warn('Unable to load arrangement', error);
+        }
+    }
+
+    clear() {
+        this.notes = this.tracks.reduce((acc, track) => ({ ...acc, [track]: [] }), {});
+        this.activeTakes.clear();
+        this.stopPlaybackNotes();
+        this.render();
+        this.renderEditor();
+    }
+}
+
 // --- MAIN APPLICATION CONTROLLER ---
 class AppController {
     constructor() {
         this.client = new AudioClient('ws://localhost:8765', () => this.handleServerReady());
         this.sequencer = new Sequencer(this.client);
+        this.arrangement = new Arrangement(this.client, this.sequencer);
+        this.sequencer.arrangement = this.arrangement;
+        this.sequencer.onPatternChange = () => {
+            if (this.activeVst === 'drums' && this.arrangement.recording) {
+                this.arrangement.captureDrumPattern(this.sequencer);
+            }
+        };
         this.isPlayable = false;
         this.activeVst = 'piano';
         
@@ -746,6 +1147,18 @@ class AppController {
         window.switchDrumPatternSlot = slot => this.sequencer.switchDrumPatternSlot(slot);
         window.triggerDrumFill = () => this.sequencer.triggerDrumFill();
         window.toggleDrumHumanize = () => this.sequencer.toggleDrumHumanize();
+        window.toggleArrangementRecord = () => {
+            const enabled = this.arrangement.toggleRecord();
+            if (this.activeVst === 'drums' && enabled) this.arrangement.captureDrumPattern(this.sequencer);
+            return enabled;
+        };
+        window.saveArrangement = () => {
+            this.arrangement.save();
+        };
+        window.loadArrangement = () => this.arrangement.load();
+        window.clearArrangement = () => this.arrangement.clear();
+        window.closeMidiEditor = () => this.arrangement.closeEditor();
+        window.editMidiNote = action => this.arrangement.editSelected(action);
         window.loadDrumPreset = () => {
             const preset = document.getElementById('drumPreset');
             this.sequencer.loadDrumPreset(preset ? preset.value : 'empty');
@@ -1229,6 +1642,9 @@ class AppController {
 
             chordData.notes.forEach(n => this.activeSet.add(n.id));
             this.client.send({ type: 'chord_on', vst: this.activeVst, notes: chordData.notes });
+            if (this.arrangement) {
+                chordData.notes.forEach(n => this.arrangement.recordNoteOn(this.activeVst, n.id, 0.78));
+            }
 
             if (this.keyElems[baseMidi]) this.keyElems[baseMidi].classList.add('active');
             this.updateChordUI(chordData, true);
@@ -1240,6 +1656,9 @@ class AppController {
             
             chordData.notes.forEach(n => this.activeSet.delete(n.id));
             this.client.send({ type: 'chord_off', notes: chordData.notes.map(n=>n.id) });
+            if (this.arrangement) {
+                chordData.notes.forEach(n => this.arrangement.recordNoteOff(this.activeVst, n.id));
+            }
 
             if (this.keyElems[baseMidi]) this.keyElems[baseMidi].classList.remove('active');
             this.updateChordUI(chordData, false);
@@ -1262,6 +1681,9 @@ class AppController {
 
             chordData.notes.forEach(n => this.activeSet.add(n.id));
             this.client.send({ type: 'chord_on', vst: this.activeVst, notes: chordData.notes });
+            if (this.arrangement) {
+                chordData.notes.forEach(n => this.arrangement.recordNoteOn(this.activeVst, n.id, 0.78));
+            }
 
             this.updateChordUI(chordData, true);
             if (padBtn) padBtn.classList.add('active');
@@ -1272,6 +1694,9 @@ class AppController {
 
             chordData.notes.forEach(n => this.activeSet.delete(n.id));
             this.client.send({ type: 'chord_off', notes: chordData.notes.map(n=>n.id) });
+            if (this.arrangement) {
+                chordData.notes.forEach(n => this.arrangement.recordNoteOff(this.activeVst, n.id));
+            }
 
             this.updateChordUI(chordData, false);
             if (padBtn) padBtn.classList.remove('active');
@@ -1555,6 +1980,7 @@ class AppController {
         
         const freq = this.midiToFreq(actualMidi);
         this.client.send({ type: 'note_on', id: actualMidi, freq: freq, vst: this.activeVst });
+        if (this.arrangement) this.arrangement.recordNoteOn(this.activeVst, actualMidi, 1);
         
         if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, true);
         this.updateDisplay();
@@ -1575,6 +2001,7 @@ class AppController {
         if (this.keyElems[baseMidi]) this.keyElems[baseMidi].classList.remove('active');
         
         this.client.send({ type: 'note_off', id: actualMidi });
+        if (this.arrangement) this.arrangement.recordNoteOff(this.activeVst, actualMidi);
         
         if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, false);
         this.updateDisplay();
