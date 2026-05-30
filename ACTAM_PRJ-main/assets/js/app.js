@@ -947,6 +947,37 @@ class Arrangement {
         this.notes[track].sort((a, b) => a.startMs - b.startMs || a.midi - b.midi);
     }
 
+    getBarRange(bar) {
+        const barMs = this.getLoopMs() / this.bars;
+        return { start: bar * barMs, end: (bar + 1) * barMs };
+    }
+
+    getNoteSegments(note) {
+        const loopMs = this.getLoopMs();
+        const stepMs = this.getStepMs();
+        const start = ((note.startMs % loopMs) + loopMs) % loopMs;
+        const duration = Math.max(stepMs, note.durationMs || stepMs);
+
+        if (duration >= loopMs) return [{ start: 0, end: loopMs }];
+
+        const end = start + duration;
+        if (end <= loopMs) return [{ start, end }];
+        return [
+            { start, end: loopMs },
+            { start: 0, end: end - loopMs }
+        ];
+    }
+
+    noteOverlapsRange(note, start, end) {
+        return this.getNoteSegments(note).some(segment => segment.start < end && segment.end > start);
+    }
+
+    updateNoteTiming(note) {
+        const stepMs = this.getStepMs();
+        note.startStep = this.msToStep(note.startMs);
+        note.durationSteps = Math.max(1, Math.round(note.durationMs / stepMs));
+    }
+
     render() {
         if (!this.grid) return;
         const barMs = this.getLoopMs() / this.bars;
@@ -1000,74 +1031,97 @@ class Arrangement {
     }
 
     getNotesInBar(track, bar) {
-        const barMs = this.getLoopMs() / this.bars;
-        const start = bar * barMs;
-        const end = start + barMs;
-        return this.notes[track].filter(note => note.startMs >= start && note.startMs < end);
+        const { start, end } = this.getBarRange(bar);
+        return this.notes[track].filter(note => this.noteOverlapsRange(note, start, end));
     }
 
     openEditor(track, bar) {
         this.editor = { track, bar, selected: null };
         if (this.editorEl) this.editorEl.style.display = 'flex';
         this.renderEditor();
+        requestAnimationFrame(() => this.scrollEditorToBar(bar));
     }
 
     closeEditor() {
         if (this.editorEl) this.editorEl.style.display = 'none';
     }
 
+    scrollEditorToBar(bar) {
+        if (!this.midiRoll) return;
+        this.midiRoll.scrollLeft = this.midiRoll.clientWidth * bar;
+    }
+
     renderEditor() {
         if (!this.midiRoll || !this.editor.track) return;
         const { track, bar, selected } = this.editor;
-        const barMs = this.getLoopMs() / this.bars;
-        const notes = this.getNotesInBar(track, bar);
+        const scrollLeft = this.midiRoll.scrollLeft;
+        const loopMs = this.getLoopMs();
+        const notes = this.notes[track];
         const minMidi = track === 'drums' ? 35 : 36;
         const maxMidi = track === 'drums' ? 52 : 84;
 
+        this.midiRoll.style.setProperty('--midi-bar-width', `${100 / this.bars}%`);
         if (this.editorTitle) this.editorTitle.textContent = `${track.toUpperCase()} · BAR ${bar + 1}`;
-        if (this.editorSub) this.editorSub.textContent = `${notes.length} NOTES · SELECT A NOTE TO EDIT`;
+        if (this.editorSub) this.editorSub.textContent = `${notes.length} NOTES · SCROLL FOR OTHER BARS`;
         this.midiRoll.innerHTML = '';
+        const content = document.createElement('div');
+        content.className = 'midi-roll-content';
+        content.style.width = `${this.bars * 100}%`;
+        this.midiRoll.appendChild(content);
+
+        for (let idx = 0; idx < this.bars; idx++) {
+            const marker = document.createElement('div');
+            marker.className = 'midi-bar-marker';
+            marker.style.left = `${(idx / this.bars) * 100}%`;
+            marker.style.width = `${100 / this.bars}%`;
+            marker.textContent = `BAR ${idx + 1}`;
+            content.appendChild(marker);
+        }
 
         notes.forEach(note => {
-            const noteEl = document.createElement('button');
-            noteEl.type = 'button';
-            noteEl.className = `midi-note${selected === note.id ? ' selected' : ''}`;
-            noteEl.style.left = `${((note.startMs - bar * barMs) / barMs) * 100}%`;
-            noteEl.style.width = `${Math.max(5, (note.durationMs / barMs) * 100)}%`;
-            noteEl.style.top = `${Math.max(0, Math.min(94, (1 - ((note.midi - minMidi) / (maxMidi - minMidi))) * 92))}%`;
-            noteEl.style.background = this.trackColors[track];
-            noteEl.title = `${note.midi}`;
-            noteEl.addEventListener('click', () => {
-                this.editor.selected = note.id;
-                this.renderEditor();
+            this.getNoteSegments(note).forEach(segment => {
+                const noteEl = document.createElement('button');
+                noteEl.type = 'button';
+                noteEl.className = `midi-note${selected === note.id ? ' selected' : ''}`;
+                noteEl.style.left = `${(segment.start / loopMs) * 100}%`;
+                noteEl.style.width = `${Math.max(1.5, ((segment.end - segment.start) / loopMs) * 100)}%`;
+                noteEl.style.top = `${Math.max(0, Math.min(94, (1 - ((note.midi - minMidi) / (maxMidi - minMidi))) * 92))}%`;
+                noteEl.style.background = this.trackColors[track];
+                noteEl.title = `${note.midi}`;
+                noteEl.addEventListener('click', () => {
+                    this.editor.selected = note.id;
+                    this.renderEditor();
+                });
+                content.appendChild(noteEl);
             });
-            this.midiRoll.appendChild(noteEl);
         });
+        this.midiRoll.scrollLeft = scrollLeft;
     }
 
     editSelected(action) {
-        const { track, bar, selected } = this.editor;
+        const { track, selected } = this.editor;
         if (!track || !selected) return;
 
         const stepMs = this.getStepMs();
-        const barMs = this.getLoopMs() / this.bars;
-        const barStart = bar * barMs;
-        const barEnd = barStart + barMs - stepMs;
+        const loopMs = this.getLoopMs();
         const note = this.notes[track].find(item => item.id === selected);
         if (!note) return;
 
-        if (action === 'left') note.startMs = Math.max(barStart, note.startMs - stepMs);
-        if (action === 'right') note.startMs = Math.min(barEnd, note.startMs + stepMs);
+        if (action === 'left') note.startMs = Math.max(0, note.startMs - stepMs);
+        if (action === 'right') note.startMs = Math.min(loopMs - stepMs, note.startMs + stepMs);
         if (action === 'up' && track !== 'drums') note.midi = Math.min(96, note.midi + 1);
         if (action === 'down' && track !== 'drums') note.midi = Math.max(24, note.midi - 1);
         if (action === 'shorter') note.durationMs = Math.max(stepMs, note.durationMs - stepMs);
-        if (action === 'longer') note.durationMs = Math.min(barMs, note.durationMs + stepMs);
+        if (action === 'longer') note.durationMs = Math.min(loopMs - note.startMs, note.durationMs + stepMs);
         if (action === 'delete') {
             this.notes[track] = this.notes[track].filter(item => item.id !== selected);
             this.editor.selected = null;
+            this.render();
+            this.renderEditor();
+            return;
         }
-        note.startStep = this.msToStep(note.startMs);
-        note.durationSteps = Math.max(1, Math.round(note.durationMs / stepMs));
+        note.durationMs = Math.min(note.durationMs, loopMs - note.startMs);
+        this.updateNoteTiming(note);
 
         this.sortTrack(track);
         this.render();
@@ -1128,6 +1182,7 @@ class AppController {
         this.initSplash();
         this.initKeyboard();
         this.initFretboard(); 
+        this.initViolinStrings();
         this.initChordPads();
         this.initEventListeners();
         this.initXYPad();
@@ -1248,6 +1303,59 @@ class AppController {
         });
     }
 
+    initViolinStrings() {
+        const violinBoard = document.getElementById('violinBoard');
+        if (!violinBoard) return;
+
+        const strings = [
+            { label: 'E', openMidi: 76, thickness: 1.2 },
+            { label: 'A', openMidi: 69, thickness: 1.7 },
+            { label: 'D', openMidi: 62, thickness: 2.2 },
+            { label: 'G', openMidi: 55, thickness: 2.8 }
+        ];
+        const positions = 18;
+
+        strings.forEach((stringInfo, stringIdx) => {
+            const stringEl = document.createElement('div');
+            stringEl.className = 'violin-string';
+            stringEl.style.setProperty('--violin-string-thickness', stringInfo.thickness + 'px');
+
+            const label = document.createElement('div');
+            label.className = 'violin-string-label';
+            label.textContent = stringInfo.label;
+            stringEl.appendChild(label);
+
+            for (let position = 0; position <= positions; position++) {
+                const noteCell = document.createElement('div');
+                noteCell.className = 'violin-position';
+
+                const currentMidi = stringInfo.openMidi + position;
+                const dot = document.createElement('div');
+                dot.className = 'violin-note-dot';
+                dot.dataset.midi = currentMidi;
+                dot.dataset.string = stringIdx;
+                dot.dataset.position = position;
+                noteCell.appendChild(dot);
+
+                noteCell.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    this.noteOn(currentMidi - (this.octaveShift * 12));
+                });
+                noteCell.addEventListener('mouseup', (e) => {
+                    e.preventDefault();
+                    this.noteOff(currentMidi - (this.octaveShift * 12));
+                });
+                noteCell.addEventListener('mouseleave', () => {
+                    this.noteOff(currentMidi - (this.octaveShift * 12));
+                });
+
+                stringEl.appendChild(noteCell);
+            }
+
+            violinBoard.appendChild(stringEl);
+        });
+    }
+
     // --- EXPRESSION XY PAD LOGIC ---
     initXYPad() {
         const canvas = document.getElementById('xyPad');
@@ -1332,6 +1440,14 @@ class AppController {
     
     updateFretboard(actualMidi, isOn) {
         const dots = document.querySelectorAll(`.note-dot[data-midi="${actualMidi}"]`);
+        dots.forEach(dot => {
+            if (isOn) dot.classList.add('active');
+            else dot.classList.remove('active');
+        });
+    }
+
+    updateViolinStrings(actualMidi, isOn) {
+        const dots = document.querySelectorAll(`.violin-note-dot[data-midi="${actualMidi}"]`);
         dots.forEach(dot => {
             if (isOn) dot.classList.add('active');
             else dot.classList.remove('active');
@@ -1625,6 +1741,10 @@ class AppController {
                     else dot.classList.remove('active');
                 }
             });
+        }
+
+        if (this.activeVst === 'strings') {
+            chordData.notes.forEach(n => this.updateViolinStrings(n.id, isOn));
         }
     }
 
@@ -1983,6 +2103,7 @@ class AppController {
         if (this.arrangement) this.arrangement.recordNoteOn(this.activeVst, actualMidi, 1);
         
         if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, true);
+        if (this.activeVst === 'strings') this.updateViolinStrings(actualMidi, true);
         this.updateDisplay();
     }
 
@@ -2004,6 +2125,7 @@ class AppController {
         if (this.arrangement) this.arrangement.recordNoteOff(this.activeVst, actualMidi);
         
         if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, false);
+        if (this.activeVst === 'strings') this.updateViolinStrings(actualMidi, false);
         this.updateDisplay();
     }
 
@@ -2016,6 +2138,7 @@ class AppController {
                 this.activeSet.delete(actualMidi);
                 this.client.send({ type: 'note_off', id: actualMidi });
                 if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, false);
+                if (this.activeVst === 'strings') this.updateViolinStrings(actualMidi, false);
             } else {
                 this.noteOff(baseMidi);
             }
@@ -2030,6 +2153,10 @@ class AppController {
                 if(keyEl && !keyEl.classList.contains('drum-pad')) keyEl.classList.remove('active');
                 if (this.activeVst === 'guitar') {
                     const dots = document.querySelectorAll(`.note-dot[data-midi="${midi}"]`);
+                    dots.forEach(d => d.classList.remove('active'));
+                }
+                if (this.activeVst === 'strings') {
+                    const dots = document.querySelectorAll(`.violin-note-dot[data-midi="${midi}"]`);
                     dots.forEach(d => d.classList.remove('active'));
                 }
             });
@@ -2095,6 +2222,9 @@ class AppController {
             
             const guitarUI = document.getElementById('guitar-ui');
             if (guitarUI) guitarUI.style.display = (vst === 'guitar') ? 'flex' : 'none';
+
+            const stringsUI = document.getElementById('strings-ui');
+            if (stringsUI) stringsUI.style.display = (vst === 'strings') ? 'flex' : 'none';
             
             this.updateDisplay();
         }
