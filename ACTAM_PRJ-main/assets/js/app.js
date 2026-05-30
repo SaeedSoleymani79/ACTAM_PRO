@@ -1182,6 +1182,7 @@ class AppController {
         this.initSplash();
         this.initKeyboard();
         this.initFretboard(); 
+        this.initViolinStrings();
         this.initChordPads();
         this.initEventListeners();
         this.initXYPad();
@@ -1302,6 +1303,59 @@ class AppController {
         });
     }
 
+    initViolinStrings() {
+        const violinBoard = document.getElementById('violinBoard');
+        if (!violinBoard) return;
+
+        const strings = [
+            { label: 'E', openMidi: 76, thickness: 1.2 },
+            { label: 'A', openMidi: 69, thickness: 1.7 },
+            { label: 'D', openMidi: 62, thickness: 2.2 },
+            { label: 'G', openMidi: 55, thickness: 2.8 }
+        ];
+        const positions = 18;
+
+        strings.forEach((stringInfo, stringIdx) => {
+            const stringEl = document.createElement('div');
+            stringEl.className = 'violin-string';
+            stringEl.style.setProperty('--violin-string-thickness', stringInfo.thickness + 'px');
+
+            const label = document.createElement('div');
+            label.className = 'violin-string-label';
+            label.textContent = stringInfo.label;
+            stringEl.appendChild(label);
+
+            for (let position = 0; position <= positions; position++) {
+                const noteCell = document.createElement('div');
+                noteCell.className = 'violin-position';
+
+                const currentMidi = stringInfo.openMidi + position;
+                const dot = document.createElement('div');
+                dot.className = 'violin-note-dot';
+                dot.dataset.midi = currentMidi;
+                dot.dataset.string = stringIdx;
+                dot.dataset.position = position;
+                noteCell.appendChild(dot);
+
+                noteCell.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    this.noteOn(currentMidi - (this.octaveShift * 12));
+                });
+                noteCell.addEventListener('mouseup', (e) => {
+                    e.preventDefault();
+                    this.noteOff(currentMidi - (this.octaveShift * 12));
+                });
+                noteCell.addEventListener('mouseleave', () => {
+                    this.noteOff(currentMidi - (this.octaveShift * 12));
+                });
+
+                stringEl.appendChild(noteCell);
+            }
+
+            violinBoard.appendChild(stringEl);
+        });
+    }
+
     // --- EXPRESSION XY PAD LOGIC ---
     initXYPad() {
         const canvas = document.getElementById('xyPad');
@@ -1386,6 +1440,14 @@ class AppController {
     
     updateFretboard(actualMidi, isOn) {
         const dots = document.querySelectorAll(`.note-dot[data-midi="${actualMidi}"]`);
+        dots.forEach(dot => {
+            if (isOn) dot.classList.add('active');
+            else dot.classList.remove('active');
+        });
+    }
+
+    updateViolinStrings(actualMidi, isOn) {
+        const dots = document.querySelectorAll(`.violin-note-dot[data-midi="${actualMidi}"]`);
         dots.forEach(dot => {
             if (isOn) dot.classList.add('active');
             else dot.classList.remove('active');
@@ -1679,6 +1741,10 @@ class AppController {
                     else dot.classList.remove('active');
                 }
             });
+        }
+
+        if (this.activeVst === 'strings') {
+            chordData.notes.forEach(n => this.updateViolinStrings(n.id, isOn));
         }
     }
 
@@ -2037,6 +2103,7 @@ class AppController {
         if (this.arrangement) this.arrangement.recordNoteOn(this.activeVst, actualMidi, 1);
         
         if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, true);
+        if (this.activeVst === 'strings') this.updateViolinStrings(actualMidi, true);
         this.updateDisplay();
     }
 
@@ -2058,6 +2125,7 @@ class AppController {
         if (this.arrangement) this.arrangement.recordNoteOff(this.activeVst, actualMidi);
         
         if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, false);
+        if (this.activeVst === 'strings') this.updateViolinStrings(actualMidi, false);
         this.updateDisplay();
     }
 
@@ -2070,6 +2138,7 @@ class AppController {
                 this.activeSet.delete(actualMidi);
                 this.client.send({ type: 'note_off', id: actualMidi });
                 if (this.activeVst === 'guitar') this.updateFretboard(actualMidi, false);
+                if (this.activeVst === 'strings') this.updateViolinStrings(actualMidi, false);
             } else {
                 this.noteOff(baseMidi);
             }
@@ -2084,6 +2153,10 @@ class AppController {
                 if(keyEl && !keyEl.classList.contains('drum-pad')) keyEl.classList.remove('active');
                 if (this.activeVst === 'guitar') {
                     const dots = document.querySelectorAll(`.note-dot[data-midi="${midi}"]`);
+                    dots.forEach(d => d.classList.remove('active'));
+                }
+                if (this.activeVst === 'strings') {
+                    const dots = document.querySelectorAll(`.violin-note-dot[data-midi="${midi}"]`);
                     dots.forEach(d => d.classList.remove('active'));
                 }
             });
@@ -2149,6 +2222,9 @@ class AppController {
             
             const guitarUI = document.getElementById('guitar-ui');
             if (guitarUI) guitarUI.style.display = (vst === 'guitar') ? 'flex' : 'none';
+
+            const stringsUI = document.getElementById('strings-ui');
+            if (stringsUI) stringsUI.style.display = (vst === 'strings') ? 'flex' : 'none';
             
             this.updateDisplay();
         }
