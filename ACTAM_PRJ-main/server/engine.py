@@ -194,7 +194,7 @@ class AudioEngine:
 
                 total_speed = speed * float(note.get('base_speed', 1.0))
 
-                frac_idx = pos + np.arange(frames, dtype=np.float32) * speed
+                frac_idx = pos + np.arange(frames, dtype=np.float32) * total_speed
                 int_idx = frac_idx.astype(np.int64)
                 np.clip(int_idx, 0, dlen - 2, out=int_idx)
                 frac = (frac_idx - int_idx).astype(np.float32)
