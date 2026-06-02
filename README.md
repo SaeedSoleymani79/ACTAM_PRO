@@ -58,7 +58,7 @@ ACTAM PRO provides four main instrument modes:
 
 Each instrument has a dedicated performance interface while sharing the same transport, effects, and arrangement system.
 
-![Instrument selection](docs/screenshots/select-instrument.png)
+![Instrument selection](images/select-instrument.png)
 
 ### 2. Sequencer and Transport
 
