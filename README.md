@@ -1,141 +1,164 @@
 # ACTAM PRO | Web-Based Real-Time Audio Workstation
 
-**ACTAM PRO** is a web-based real-time audio workstation for performance, sequencing, synthesis, effects processing, and recording. It was developed as an academic project for **Advanced Coding Tools and Methodologies** at **Politecnico di Milano** by **Saeid Soleimani** and **Hanxiang Gao**.
+ACTAM PRO is a web-based real-time audio workstation built for live performance, synthesis, sequencing, effects processing, arrangement editing, and recording. The project combines a browser-based DAW-style interface with a Python audio engine.
 
-The system combines a browser-based musical interface with a Python audio engine. The frontend handles interaction, sequencing, chord control, instrument views, and arrangement editing, while the backend performs real-time DSP, synthesis, effects processing, and audio/MIDI recording.
+The frontend provides the visual interface and performance controls, while the backend receives WebSocket messages, generates sound in real time, applies effects, and outputs audio through the system audio device.
 
 ---
 
-## Basic Framework
+## Project Structure
+
+```text
+ACTAM_PRO/
+├── README.md
+├── images/                         # README screenshots
+│   ├── select-instrument.png
+│   ├── piano-interface.png
+│   ├── strings-interface.png
+│   ├── guitar-interface.png
+│   └── drum-machine.png
+│
+└── ACTAM_PRO/                       # Main application folder
+    ├── index.html                   # Main browser UI
+    ├── start.py                     # Opens the UI and starts the backend server
+    ├── main.py                      # WebSocket server and message router
+    ├── requirements.txt             # Python dependencies
+    ├── run.bat                      # Windows launcher
+    ├── run.sh                       # macOS / Linux launcher
+    ├── recordings/                  # Saved WAV / MIDI recordings
+    │
+    ├── assets/
+    │   ├── css/
+    │   │   └── style.css            # Interface styling
+    │   └── js/
+    │       └── app.js               # Frontend interaction, sequencer, arrangement logic
+    │
+    └── server/
+        ├── engine.py                # Real-time audio engine, mixing, recording
+        ├── fx.py                    # Tremolo, delay, reverb and effect processing
+        └── instruments.py           # Piano, strings, guitar and drum synthesis
+```
+
+### Basic Architecture
 
 ```text
 Browser Frontend
 HTML / CSS / JavaScript
-│
-│  WebSocket JSON messages
-│  note_on, note_off, chord, parameter, recording, transport
-▼
+        │
+        │ WebSocket JSON messages
+        │ note_on, note_off, chord, parameter, recording, transport
+        ▼
 Python Backend Audio Engine
 NumPy / SciPy / sounddevice / mido
-│
-│  synthesis, mixing, effects, recording
-▼
+        │
+        │ synthesis, mixing, effects, recording
+        ▼
 Audio Output + WAV / MIDI Export
 ```
 
-### Frontend
-
-The frontend is a DAW-style control surface built with **HTML, CSS, and JavaScript**. It is responsible for the visual interface and musical interaction logic, including:
-
-- instrument selection;
-- transport controls, tempo, and time signature;
-- virtual piano keyboard, guitar fretboard, string controller, and drum pads;
-- smart chord pads and keyboard chord triggering;
-- drum step sequencer and pattern editor;
-- arrangement grid for multi-instrument recording;
-- master effects controls and XY expression pad.
-
-### Backend
-
-The backend is a **Python real-time DSP engine**. It receives performance and control messages from the browser, generates audio, applies effects, and streams the final output to the system audio device. It also supports session capture as audio and MIDI files.
-
-### Communication
-
-The frontend and backend communicate through **WebSockets**. The browser sends lightweight JSON control events, while the Python backend handles sound generation and real-time playback.
-
 ---
 
-## Main Features
+## How to Run
 
-### 1. Multi-Instrument Performance
+### 1. Clone the repository
 
-ACTAM PRO provides four main instrument modes:
+```bash
+git clone https://github.com/SaeedSoleymani79/ACTAM_PRO.git
+cd ACTAM_PRO/ACTAM_PRO
+```
 
-- **Grand Piano** — additive synthesis style;
-- **Strings** — super-saw / ensemble-style synthesis;
-- **Guitar** — physical-model-inspired plucked string behavior;
-- **Drum Kit** — rhythm machine with percussion pads and step sequencing.
-
-Each instrument has a dedicated performance interface while sharing the same transport, effects, and arrangement system.
-
-![Instrument selection](images/select-instrument.png)
-
-### 2. Sequencer and Transport
-
-The global transport panel supports:
-
-- play / stop / record workflow;
-- BPM control;
-- time signature selection;
-- WAV recording mode;
-- bar-based arrangement recording.
-
-The transport controls are available across the instrument pages, allowing the user to keep a consistent workflow while switching between piano, strings, guitar, and drums.
-
-### 3. Drum Machine
-
-The drum interface includes a **16-step pattern editor** with multiple drum lanes such as kick, snare, hi-hat, toms, ride, crash, and open hat. It also supports groove-oriented controls such as pattern presets, swing, fill, humanization, loop mode, and drum-machine activation.
-
-![Drum machine](images/drum-machine.png)
-
-For more detailed rhythm editing, the drum part can also be viewed and edited in a piano-roll-style editor, where notes can be moved, shortened, extended, or deleted.
-
-![Drum piano-roll editor](images/drum-piano-roll.png)
-
-### 4. Smart Chords
-
-The smart chord section lets the user choose a root note and scale type, then automatically maps harmonic chords to numbered pads. This allows quick chord performance from the keyboard and supports different instrument behaviors, especially guitar-oriented voicings.
-
-### 5. Performance Controllers
-
-Different instruments expose different real-time controllers:
-
-- piano-style keyboard for melodic input;
-- guitar fretboard visualization;
-- string performance surface;
-- virtual drumset pads;
-- pitch and tuning controls.
-
-| Piano Interface | Strings Interface |
-|---|---|
-| ![Piano interface](images/piano-interface.png) | ![Strings interface](images/strings-interface.png) |
-
-| Guitar Interface | Drum Pads |
-|---|---|
-| ![Guitar interface](images/guitar-interface.png) | ![Drum machine pads](images/drum-machine.png) |
-
-### 6. Master Effects Rack
-
-The master effects rack applies effects to the final mix, including:
-
-- XY live expression pad;
-- tremolo;
-- delay;
-- reverb.
-
-These controls allow real-time sound shaping during performance and recording.
-
-### 7. Arrangement and Recording
-
-The arrangement panel records musical ideas by bar and instrument track. It allows users to build short multi-instrument sections and export performances through backend recording.
-
----
-
-## Installation and Running
-
-Install dependencies:
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Launch the application:
+The main Python dependencies are:
+
+```text
+numpy
+scipy
+sounddevice
+websockets
+mido
+```
+
+### 3. Start the application
 
 ```bash
 python start.py
 ```
 
-After startup, the browser interface opens and connects to the Python audio engine. Once the backend finishes loading the instruments and the WebSocket connection is ready, the system can be played in real time.
+After startup, the browser interface opens automatically and connects to the Python audio server. The first launch may take a short moment because the backend precomputes the instrument sounds.
+
+### Optional launch scripts
+
+On Windows:
+
+```bash
+run.bat
+```
+
+On macOS / Linux:
+
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+---
+
+## Main Features
+
+## 1. Instrument Selection
+
+The opening screen lets the user choose one of four instrument modes: piano, strings, guitar, and drums. Each instrument has its own performance interface, but they share the same transport, effects, and arrangement workflow.
+
+![Instrument Selection](images/select-instrument.png)
+
+---
+
+## 2. Piano Interface
+
+The piano mode provides a keyboard-based performance interface for melodic playing and chord triggering. It is suitable for testing the additive-style piano sound and for recording simple harmonic or melodic ideas into the arrangement section.
+
+![Piano Interface](images/piano-interface.png)
+
+---
+
+## 3. Strings Interface
+
+The strings mode uses an ensemble / super-saw style sound. It keeps the same general performance layout while adapting the controller area for string-like playing and expressive sustained textures.
+
+![Strings Interface](images/strings-interface.png)
+
+---
+
+## 4. Guitar Interface
+
+The guitar mode provides a guitar-oriented interface with fretboard-style visual control and chord support. It is designed for plucked-string performance and quick harmonic sketching.
+
+![Guitar Interface](images/guitar-interface.png)
+
+---
+
+## 5. Drum Machine
+
+The drum mode combines virtual drum pads with a step-based rhythm machine. The pattern editor supports multiple drum lanes, preset patterns, swing, fill, humanization, loop mode, and custom pattern saving.
+
+![Drum Machine](images/drum-machine.png)
+
+---
+
+## 6. Shared Transport, Effects and Arrangement
+
+Across all instruments, ACTAM PRO provides several shared production modules:
+
+- **Sequencer / Transport**: play, stop, BPM control, time signature selection, WAV / MIDI recording controls.
+- **Smart Chords**: choose a root note and scale type, then trigger mapped chords quickly.
+- **Master Effects Rack**: live XY expression control, tremolo, delay and reverb.
+- **Arrangement**: an 8-bar draft area for building short multi-instrument sections and saving musical ideas.
+- **Recording**: backend recording support for exporting performances as WAV or MIDI files.
 
 ---
 
@@ -143,13 +166,13 @@ After startup, the browser interface opens and connects to the Python audio engi
 
 1. Start the application with `python start.py`.
 2. Select an instrument from the instrument selection screen.
-3. Use the keyboard, fretboard, chord pads, or drum pads to perform.
-4. Adjust BPM, time signature, and master effects.
-5. Build drum patterns or record arrangement bars.
-6. Export the performance as WAV and/or MIDI when needed.
+3. Play using the keyboard, strings controller, guitar interface, or drum pads.
+4. Adjust BPM, time signature, smart chords, and master effects.
+5. Build rhythm patterns or record bars into the arrangement.
+6. Export the performance as WAV or MIDI when needed.
 
 ---
 
 ## Project Goal
 
-The goal of ACTAM PRO is to demonstrate a low-latency web-to-Python audio workstation that combines real-time performance, algorithmic synthesis, step sequencing, effects processing, and recording in a single interactive system.
+The goal of ACTAM PRO is to demonstrate a low-latency web-to-Python audio workstation that combines real-time performance, algorithmic synthesis, sequencing, effects processing, arrangement editing, and recording in a single interactive system.
